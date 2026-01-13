@@ -10,7 +10,11 @@ from .views import (
     ClassSubjectAssignmentViewSet, ClassOptionalConfigViewSet,
     ClassOptionalAssignmentViewSet, ClassCocurricularConfigViewSet,
     ClassMarksDistributionViewSet, SchoolConfigViewSet,
-    StudentViewSet, TeacherViewSet, AdminViewSet
+    StudentViewSet, TeacherViewSet, AdminViewSet,
+    # New views for modular apps
+    StudentLoginView, StudentPortalView, StudentFeesView,
+    TeacherAssignmentViewSet, MyAssignmentsView, MyPendingTasksView,
+    AdminDashboardStatsView
 )
 
 router = DefaultRouter()
@@ -29,10 +33,28 @@ router.register(r'school-config', SchoolConfigViewSet)
 router.register(r'students', StudentViewSet)
 router.register(r'teachers', TeacherViewSet)
 router.register(r'admins', AdminViewSet)
+router.register(r'teacher-assignments', TeacherAssignmentViewSet)
 
 urlpatterns = [
+    # Staff authentication
     path('auth/login/', LoginView.as_view(), name='login'),
     path('auth/logout/', LogoutView.as_view(), name='logout'),
     path('auth/me/', CurrentUserView.as_view(), name='current-user'),
+    
+    # Student authentication (for payments portal)
+    path('auth/student-login/', StudentLoginView.as_view(), name='student-login'),
+    
+    # Student portal endpoints
+    path('student/me/', StudentPortalView.as_view(), name='student-portal'),
+    path('student/fees/', StudentFeesView.as_view(), name='student-fees'),
+    
+    # Teacher RMS endpoints
+    path('teacher/my-assignments/', MyAssignmentsView.as_view(), name='my-assignments'),
+    path('teacher/pending-tasks/', MyPendingTasksView.as_view(), name='pending-tasks'),
+    
+    # Admin dashboard endpoints
+    path('admin/dashboard-stats/', AdminDashboardStatsView.as_view(), name='admin-dashboard-stats'),
+    
+    # Router URLs
     path('', include(router.urls)),
 ]

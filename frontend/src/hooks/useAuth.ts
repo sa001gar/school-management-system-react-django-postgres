@@ -44,7 +44,8 @@ export const useAuth = () => {
     // Set up periodic token validation (every 5 minutes)
     const validateSession = async () => {
       const token = getAccessToken()
-      if (!token) {
+      const refreshToken = localStorage.getItem('refresh_token')
+      if (!token || !refreshToken) {
         setUser(null)
         setTeacher(null)
         setAdmin(null)
@@ -53,8 +54,8 @@ export const useAuth = () => {
 
       try {
         // Try to refresh the token
-        const newTokens = await authApi.refreshToken()
-        setTokens(newTokens.access, newTokens.refresh)
+        const newTokens = await authApi.refreshToken(refreshToken)
+        setTokens(newTokens.access, newTokens.refresh || refreshToken)
       } catch (error) {
         console.error('Token refresh failed:', error)
         clearTokens()

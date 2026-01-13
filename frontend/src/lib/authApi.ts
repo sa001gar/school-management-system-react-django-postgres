@@ -5,9 +5,25 @@
 import api, { setTokens, clearTokens, API_BASE_URL } from './api';
 import type { LoginResponse, CurrentUserResponse, Teacher } from './types';
 
+/**
+ * Custom error class for authentication errors with additional context
+ */
+export class AuthError extends Error {
+  retryAfter?: number;
+  attemptsRemaining?: number;
+  
+  constructor(message: string, options?: { retryAfter?: number; attemptsRemaining?: number }) {
+    super(message);
+    this.name = 'AuthError';
+    this.retryAfter = options?.retryAfter;
+    this.attemptsRemaining = options?.attemptsRemaining;
+  }
+}
+
 export const authApi = {
   /**
    * Login with email and password
+   * Handles rate limiting and lockout responses
    */
   login: async (email: string, password: string): Promise<LoginResponse> => {
     const response = await fetch(`${API_BASE_URL}/auth/login/`, {
@@ -20,7 +36,27 @@ export const authApi = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || errorData.non_field_errors?.[0] || 'Invalid login credentials');
+      
+      // Handle 429 (Too Many Requests) - account locked
+      if (response.status === 429) {
+        throw new AuthError(
+          errorData.message || 'Too many failed login attempts. Please try again later.',
+          { retryAfter: errorData.retry_after }
+        );
+      }
+      
+      // Handle 401 (Unauthorized) - invalid credentials with attempt tracking
+      if (response.status === 401) {
+        const message = errorData.message || 'Invalid email or password.';
+        throw new AuthError(message);
+      }
+      
+      throw new AuthError(
+        errorData.detail || 
+        errorData.non_field_errors?.[0] || 
+        errorData.error ||
+        'Invalid login credentials'
+      );
     }
 
     const data: LoginResponse = await response.json();

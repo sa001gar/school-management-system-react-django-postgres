@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
-import { User, Lock, Eye, EyeOff, AlertCircle, HelpCircle } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, AlertCircle, HelpCircle, Clock } from 'lucide-react'
 import { useAuthContext } from '../contexts/AuthContext'
+import { AuthError } from '../lib/authApi'
 
 interface LoginForm {
   email: string
@@ -10,7 +11,7 @@ interface LoginForm {
 
 // Background Pattern Component 
 const GridPattern = () => (
-  <div className="absolute inset-0 -z-10 h-full w-full bg-white bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] bg-[size:6rem_4rem]">
+  <div className="absolute inset-0 -z-10 h-full w-full bg-white bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear_gradient(to_bottom,#f0f0f0_1px,transparent_1px)] bg-[size:6rem_4rem]">
     <div className="absolute bottom-0 left-0 right-0 top-0 bg-[radial-gradient(circle_500px_at_50%_200px,#fbbf24,transparent)]"></div>
   </div>
 )
@@ -22,8 +23,25 @@ export const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [sessionExpired, setSessionExpired] = useState(false)
+  const [lockoutSeconds, setLockoutSeconds] = useState<number>(0)
 
   const { register, handleSubmit, formState: { errors }, reset } = useForm<LoginForm>()
+
+  // Countdown timer for lockout
+  useEffect(() => {
+    if (lockoutSeconds > 0) {
+      const timer = setInterval(() => {
+        setLockoutSeconds(prev => {
+          if (prev <= 1) {
+            setError(null)
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+      return () => clearInterval(timer)
+    }
+  }, [lockoutSeconds])
 
   useEffect(() => {
     // Check if user was redirected due to session expiry
@@ -35,9 +53,15 @@ export const Login: React.FC = () => {
     }
   }, [])
 
+  const formatLockoutTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+  }
+
   const onSubmit = async (data: LoginForm) => {
-    // Prevent double submission
-    if (isSubmitting || loading) return
+    // Prevent double submission or submission during lockout
+    if (isSubmitting || loading || lockoutSeconds > 0) return
     
     setIsSubmitting(true)
     setError(null)
@@ -45,18 +69,22 @@ export const Login: React.FC = () => {
     setSessionExpired(false)
     
     try {
-      const { error } = await signIn(data.email, data.password)
+      const { error: signInError } = await signIn(data.email, data.password)
       
-      if (error) {
-        // Handle specific error types
-        if (error.message?.includes('Invalid login credentials')) {
-          setError('Invalid email or password. Please check your credentials and try again.')
-        } else if (error.message?.includes('Email not confirmed')) {
+      if (signInError) {
+        // Handle AuthError with lockout info
+        if (signInError instanceof AuthError && signInError.retryAfter) {
+          setLockoutSeconds(signInError.retryAfter)
+          setError(signInError.message)
+        } else if (signInError.message?.includes('Invalid') || signInError.message?.includes('credentials')) {
+          setError(signInError.message || 'Invalid email or password. Please check your credentials and try again.')
+        } else if (signInError.message?.includes('Email not confirmed')) {
           setError('Please confirm your email address before signing in.')
-        } else if (error.message?.includes('Too many requests')) {
-          setError('Too many login attempts. Please wait a moment and try again.')
+        } else if (signInError.message?.includes('Too many') || signInError.message?.includes('locked')) {
+          setLockoutSeconds(300) // Default 5 minute lockout
+          setError(signInError.message || 'Too many login attempts. Please wait and try again.')
         } else {
-          setError(error.message || 'An error occurred during sign in. Please try again.')
+          setError(signInError.message || 'An error occurred during sign in. Please try again.')
         }
         setIsSubmitting(false)
       } else {
@@ -73,6 +101,7 @@ export const Login: React.FC = () => {
 
   // Show loading state if auth is processing
   const showLoadingState = loading || isSubmitting
+  const isLocked = lockoutSeconds > 0
 
   return (
     <div className="relative min-h-screen w-full flex items-center justify-center font-sans overflow-hidden p-4">
@@ -156,8 +185,20 @@ export const Login: React.FC = () => {
             </div>
             
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg text-center transition-all border border-red-200">
-                {error}
+              <div className={`text-sm p-3 rounded-lg text-center transition-all border ${
+                isLocked 
+                  ? 'text-orange-700 bg-orange-50 border-orange-200' 
+                  : 'text-red-600 bg-red-50 border-red-200'
+              }`}>
+                <div className="flex items-center justify-center gap-2">
+                  {isLocked && <Clock className="h-4 w-4" />}
+                  <span>{error}</span>
+                </div>
+                {isLocked && (
+                  <div className="mt-2 font-medium">
+                    Try again in: {formatLockoutTime(lockoutSeconds)}
+                  </div>
+                )}
               </div>
             )}
             
@@ -170,7 +211,7 @@ export const Login: React.FC = () => {
             <div>
               <button
                 type="submit"
-                disabled={showLoadingState}
+                disabled={showLoadingState || isLocked}
                 className="w-full flex justify-center items-center py-3 px-4 border-2 border-transparent rounded-lg shadow-professional text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:bg-amber-400 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105 disabled:transform-none"
               >
                 {showLoadingState ? (

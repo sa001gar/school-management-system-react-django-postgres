@@ -298,17 +298,29 @@ class SchoolConfig(models.Model):
 class Student(models.Model):
     """Student information."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    student_id = models.CharField(max_length=50, unique=True, help_text="Unique student identifier for login")
     roll_no = models.CharField(max_length=50)
     name = models.CharField(max_length=255)
+    date_of_birth = models.DateField(null=True, blank=True, help_text="Used as default password (DDMMYYYY format)")
+    father_name = models.CharField(max_length=255, blank=True)
+    mother_name = models.CharField(max_length=255, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    address = models.TextField(blank=True)
     class_ref = models.ForeignKey(Class, on_delete=models.SET_NULL, null=True, related_name='students', db_column='class_id')
     section = models.ForeignKey(Section, on_delete=models.SET_NULL, null=True, related_name='students')
     session = models.ForeignKey(Session, on_delete=models.SET_NULL, null=True, related_name='students')
+    # Password hash for student login (default: DOB as DDMMYYYY)
+    password_hash = models.CharField(max_length=128, blank=True)
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         db_table = 'students'
         ordering = ['roll_no']
         indexes = [
+            # Index for student login
+            models.Index(fields=['student_id'], name='idx_stu_student_id'),
             # Composite index for common filter: session + class + section
             models.Index(
                 fields=['session', 'class_ref', 'section'],
@@ -331,5 +343,64 @@ class Student(models.Model):
             ),
         ]
     
+    def set_password(self, raw_password):
+        """Hash and set the password."""
+        from django.contrib.auth.hashers import make_password
+        self.password_hash = make_password(raw_password)
+    
+    def check_password(self, raw_password):
+        """Check the password against the stored hash."""
+        from django.contrib.auth.hashers import check_password
+        return check_password(raw_password, self.password_hash)
+    
+    def set_default_password(self):
+        """Set default password as DOB in DDMMYYYY format."""
+        if self.date_of_birth:
+            default_pwd = self.date_of_birth.strftime('%d%m%Y')
+            self.set_password(default_pwd)
+    
+    def save(self, *args, **kwargs):
+        # Auto-generate student_id if not provided
+        if not self.student_id:
+            # Generate student ID: SESSION_YEAR + CLASS_LEVEL + ROLL_NO
+            session_year = ""
+            if self.session and self.session.start_date:
+                session_year = str(self.session.start_date.year)[-2:]
+            class_level = str(self.class_ref.level).zfill(2) if self.class_ref else "00"
+            roll = str(self.roll_no).zfill(4) if self.roll_no else "0000"
+            self.student_id = f"STU{session_year}{class_level}{roll}"
+        
+        # Set default password if not set and DOB is available
+        if not self.password_hash and self.date_of_birth:
+            self.set_default_password()
+        
+        super().save(*args, **kwargs)
+    
     def __str__(self):
-        return f"{self.roll_no} - {self.name}"
+        return f"{self.student_id} - {self.name}"
+
+
+class TeacherAssignment(models.Model):
+    """Assignment of teachers to class-section-subject combinations."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='assignments')
+    class_ref = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='teacher_assignments', db_column='class_id')
+    section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='teacher_assignments')
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='teacher_assignments')
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='teacher_assignments')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'teacher_assignments'
+        unique_together = ['teacher', 'class_ref', 'section', 'subject', 'session']
+        indexes = [
+            # Index for teacher lookups
+            models.Index(fields=['teacher', 'session'], name='idx_ta_teacher_session'),
+            # Index for class-section lookups
+            models.Index(fields=['class_ref', 'section', 'session'], name='idx_ta_cls_sec_session'),
+        ]
+    
+    def __str__(self):
+        return f"{self.teacher.name} - {self.class_ref.name} {self.section.name} - {self.subject.name}"
