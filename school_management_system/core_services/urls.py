@@ -11,10 +11,16 @@ from .views import (
     ClassOptionalAssignmentViewSet, ClassCocurricularConfigViewSet,
     ClassMarksDistributionViewSet, SchoolConfigViewSet,
     StudentViewSet, TeacherViewSet, AdminViewSet,
-    # New views for modular apps
+    # Student Portal
     StudentLoginView, StudentPortalView, StudentFeesView,
+    # Teacher endpoints
     TeacherAssignmentViewSet, MyAssignmentsView, MyPendingTasksView,
-    AdminDashboardStatsView
+    # Admin endpoints
+    AdminDashboardStatsView,
+    # New SMS endpoints
+    StudentEnrollmentViewSet, ClassTeacherViewSet, SessionLockView,
+    CocurricularTeacherAssignmentViewSet, OptionalTeacherAssignmentViewSet,
+    MarksheetGenerationView, CheckMarksEntryAuthorizationView
 )
 
 router = DefaultRouter()
@@ -34,6 +40,11 @@ router.register(r'students', StudentViewSet)
 router.register(r'teachers', TeacherViewSet)
 router.register(r'admins', AdminViewSet)
 router.register(r'teacher-assignments', TeacherAssignmentViewSet)
+# New SMS routes
+router.register(r'student-enrollments', StudentEnrollmentViewSet, basename='student-enrollments')
+router.register(r'class-teachers', ClassTeacherViewSet, basename='class-teachers')
+router.register(r'cocurricular-teacher-assignments', CocurricularTeacherAssignmentViewSet, basename='cocurricular-teacher-assignments')
+router.register(r'optional-teacher-assignments', OptionalTeacherAssignmentViewSet, basename='optional-teacher-assignments')
 
 urlpatterns = [
     # Staff authentication
@@ -51,9 +62,16 @@ urlpatterns = [
     # Teacher RMS endpoints
     path('teacher/my-assignments/', MyAssignmentsView.as_view(), name='my-assignments'),
     path('teacher/pending-tasks/', MyPendingTasksView.as_view(), name='pending-tasks'),
+    path('teacher/check-marks-authorization/', CheckMarksEntryAuthorizationView.as_view(), name='check-marks-authorization'),
     
     # Admin dashboard endpoints
     path('admin/dashboard-stats/', AdminDashboardStatsView.as_view(), name='admin-dashboard-stats'),
+    
+    # Session management
+    path('admin/session-lock/', SessionLockView.as_view(), name='session-lock'),
+    
+    # Marksheet generation with fee validation
+    path('marksheet/', MarksheetGenerationView.as_view(), name='marksheet-generation'),
     
     # Router URLs
     path('', include(router.urls)),

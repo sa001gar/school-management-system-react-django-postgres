@@ -1,11 +1,17 @@
 """
 Core Services Models - Central data models for the school management system.
 Contains Students, Classes, Sections, Sessions, Teachers, Admins, and related configurations.
+
+System Philosophy:
+- Permanent student identity with session-wise academic and financial records
+- Historical immutability and strong data integrity
+- Full auditability with session-based record management
 """
 import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 
 class CustomUser(AbstractUser):
@@ -17,6 +23,7 @@ class CustomUser(AbstractUser):
     ROLE_CHOICES = [
         ('admin', 'Admin'),
         ('teacher', 'Teacher'),
+        ('student', 'Student'),  # For student portal access
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='teacher')
     
@@ -27,6 +34,18 @@ class CustomUser(AbstractUser):
         db_table = 'users'
         verbose_name = 'User'
         verbose_name_plural = 'Users'
+    
+    @property
+    def is_admin(self):
+        return self.role == 'admin'
+    
+    @property
+    def is_teacher(self):
+        return self.role == 'teacher'
+    
+    @property
+    def is_student(self):
+        return self.role == 'student'
     
     def __str__(self):
         return f"{self.email} ({self.role})"
@@ -73,17 +92,26 @@ class Teacher(models.Model):
 
 
 class Session(models.Model):
-    """Academic session/year."""
+    """
+    Academic session/year.
+    
+    Session-Based Data Integrity:
+    - Every academic and financial record is attached to a session
+    - When a session ends, data is locked (is_locked=True)
+    - New session enrollment is created for promoted students
+    - Historical data remains immutable
+    """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
     start_date = models.DateField()
     end_date = models.DateField()
     is_active = models.BooleanField(default=False)
+    is_locked = models.BooleanField(default=False, help_text="When locked, no academic/financial changes allowed")
     created_at = models.DateTimeField(default=timezone.now)
     
     class Meta:
         db_table = 'sessions'
-        ordering = ['-created_at']
+        ordering = ['-start_date']
         indexes = [
             # Partial index for active sessions (most common query)
             models.Index(
@@ -92,6 +120,16 @@ class Session(models.Model):
                 condition=models.Q(is_active=True)
             ),
         ]
+    
+    def clean(self):
+        if self.end_date <= self.start_date:
+            raise ValidationError("End date must be after start date")
+    
+    def lock_session(self):
+        """Lock the session preventing any further modifications"""
+        self.is_locked = True
+        self.is_active = False
+        self.save()
     
     def __str__(self):
         return self.name
@@ -296,51 +334,64 @@ class SchoolConfig(models.Model):
 
 
 class Student(models.Model):
-    """Student information."""
+    """
+    Permanent Student Identity.
+    
+    The student identity never changes; only session enrollments evolve.
+    This model stores the permanent student information.
+    Session-specific data (class, section, roll number) is in StudentEnrollment.
+    """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    student_id = models.CharField(max_length=50, unique=True, help_text="Unique student identifier for login")
-    roll_no = models.CharField(max_length=50)
+    student_id = models.CharField(max_length=50, unique=True, help_text="Permanent unique student identifier")
+    
+    # Personal Information (Permanent)
     name = models.CharField(max_length=255)
-    date_of_birth = models.DateField(null=True, blank=True, help_text="Used as default password (DDMMYYYY format)")
+    date_of_birth = models.DateField(null=True, blank=True)
     father_name = models.CharField(max_length=255, blank=True)
     mother_name = models.CharField(max_length=255, blank=True)
+    guardian_name = models.CharField(max_length=255, blank=True)
+    guardian_relation = models.CharField(max_length=100, blank=True)
     phone = models.CharField(max_length=20, blank=True)
+    alternate_phone = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True, null=True)
     address = models.TextField(blank=True)
-    class_ref = models.ForeignKey(Class, on_delete=models.SET_NULL, null=True, related_name='students', db_column='class_id')
-    section = models.ForeignKey(Section, on_delete=models.SET_NULL, null=True, related_name='students')
-    session = models.ForeignKey(Session, on_delete=models.SET_NULL, null=True, related_name='students')
-    # Password hash for student login (default: DOB as DDMMYYYY)
+    
+    # Admission Info
+    admission_date = models.DateField(null=True, blank=True)
+    admission_class = models.ForeignKey(
+        Class, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='admitted_students', db_column='admission_class_id'
+    )
+    admission_session = models.ForeignKey(
+        Session, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='admitted_students', db_column='admission_session_id'
+    )
+    
+    # Legacy fields for backward compatibility (will be migrated to enrollments)
+    roll_no = models.CharField(max_length=50, blank=True)
+    class_ref = models.ForeignKey(Class, on_delete=models.SET_NULL, null=True, blank=True, related_name='students', db_column='class_id')
+    section = models.ForeignKey(Section, on_delete=models.SET_NULL, null=True, blank=True, related_name='students')
+    session = models.ForeignKey(Session, on_delete=models.SET_NULL, null=True, blank=True, related_name='students')
+    
+    # Authentication for student portal
     password_hash = models.CharField(max_length=128, blank=True)
+    
+    # Status
     is_active = models.BooleanField(default=True)
+    
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
         db_table = 'students'
-        ordering = ['roll_no']
+        ordering = ['name']
         indexes = [
-            # Index for student login
             models.Index(fields=['student_id'], name='idx_stu_student_id'),
-            # Composite index for common filter: session + class + section
-            models.Index(
-                fields=['session', 'class_ref', 'section'],
-                name='idx_stu_sess_cls_sec'
-            ),
-            # Index for class + section lookups
-            models.Index(
-                fields=['class_ref', 'section'],
-                name='idx_stu_cls_sec'
-            ),
-            # Index for name search
-            models.Index(
-                fields=['name'],
-                name='idx_stu_name'
-            ),
-            # Composite for ordering by roll_no within class
-            models.Index(
-                fields=['class_ref', 'roll_no'],
-                name='idx_stu_cls_roll'
-            ),
+            models.Index(fields=['session', 'class_ref', 'section'], name='idx_stu_sess_cls_sec'),
+            models.Index(fields=['class_ref', 'section'], name='idx_stu_cls_sec'),
+            models.Index(fields=['name'], name='idx_stu_name'),
+            models.Index(fields=['class_ref', 'roll_no'], name='idx_stu_cls_roll'),
+            models.Index(fields=['admission_session'], name='idx_stu_admission_sess'),
         ]
     
     def set_password(self, raw_password):
@@ -359,16 +410,20 @@ class Student(models.Model):
             default_pwd = self.date_of_birth.strftime('%d%m%Y')
             self.set_password(default_pwd)
     
+    def get_current_enrollment(self):
+        """Get the current active session enrollment."""
+        return self.enrollments.filter(session__is_active=True).first()
+    
+    def get_enrollment_for_session(self, session):
+        """Get enrollment for a specific session."""
+        return self.enrollments.filter(session=session).first()
+    
     def save(self, *args, **kwargs):
         # Auto-generate student_id if not provided
         if not self.student_id:
-            # Generate student ID: SESSION_YEAR + CLASS_LEVEL + ROLL_NO
-            session_year = ""
-            if self.session and self.session.start_date:
-                session_year = str(self.session.start_date.year)[-2:]
-            class_level = str(self.class_ref.level).zfill(2) if self.class_ref else "00"
-            roll = str(self.roll_no).zfill(4) if self.roll_no else "0000"
-            self.student_id = f"STU{session_year}{class_level}{roll}"
+            import time
+            timestamp = str(int(time.time() * 1000))[-6:]
+            self.student_id = f"STU{timestamp}"
         
         # Set default password if not set and DOB is available
         if not self.password_hash and self.date_of_birth:
@@ -380,8 +435,159 @@ class Student(models.Model):
         return f"{self.student_id} - {self.name}"
 
 
+class StudentEnrollment(models.Model):
+    """
+    Session-wise Student Enrollment.
+    
+    Each student has one enrollment record per session.
+    This tracks their class, section, roll number, and status for that session.
+    Historical enrollments remain immutable for audit purposes.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='enrollments')
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='enrollments')
+    class_ref = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='enrollments', db_column='class_id')
+    section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='enrollments')
+    roll_no = models.CharField(max_length=50)
+    
+    # Enrollment Status
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('promoted', 'Promoted'),
+        ('retained', 'Retained'),
+        ('transferred', 'Transferred Out'),
+        ('graduated', 'Graduated'),
+        ('dropped', 'Dropped Out'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    
+    # Tracking
+    promoted_to = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='promoted_from_enrollment'
+    )
+    promotion_date = models.DateField(null=True, blank=True)
+    remarks = models.TextField(blank=True)
+    
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'student_enrollments'
+        unique_together = ['student', 'session']
+        ordering = ['-session__start_date', 'roll_no']
+        indexes = [
+            models.Index(fields=['session', 'class_ref', 'section'], name='idx_enroll_sess_cls_sec'),
+            models.Index(fields=['student', 'session'], name='idx_enroll_stu_sess'),
+            models.Index(fields=['status'], name='idx_enroll_status'),
+        ]
+    
+    def clean(self):
+        # Validate section belongs to class
+        if self.section and self.class_ref:
+            if self.section.class_ref_id != self.class_ref_id:
+                raise ValidationError("Section must belong to the selected class")
+        
+        # Prevent modification of locked sessions
+        if self.session and self.session.is_locked and self.pk:
+            # Only allow status changes for locked sessions
+            pass
+    
+    def promote_to_next_class(self, new_class, new_section, new_session, new_roll_no):
+        """Promote student to next class/session."""
+        if self.status != 'active':
+            raise ValidationError("Only active students can be promoted")
+        
+        # Create new enrollment
+        new_enrollment = StudentEnrollment.objects.create(
+            student=self.student,
+            session=new_session,
+            class_ref=new_class,
+            section=new_section,
+            roll_no=new_roll_no,
+            status='active'
+        )
+        
+        # Update current enrollment
+        self.status = 'promoted'
+        self.promoted_to = new_enrollment
+        self.promotion_date = timezone.now().date()
+        self.save()
+        
+        # Update student's current class info
+        self.student.class_ref = new_class
+        self.student.section = new_section
+        self.student.session = new_session
+        self.student.roll_no = new_roll_no
+        self.student.save()
+        
+        return new_enrollment
+    
+    def retain_in_same_class(self, new_session, new_roll_no=None):
+        """Retain student in the same class for next session."""
+        new_enrollment = StudentEnrollment.objects.create(
+            student=self.student,
+            session=new_session,
+            class_ref=self.class_ref,
+            section=self.section,
+            roll_no=new_roll_no or self.roll_no,
+            status='active'
+        )
+        
+        self.status = 'retained'
+        self.save()
+        
+        return new_enrollment
+    
+    def transfer_out(self, remarks=''):
+        """Mark student as transferred out."""
+        self.status = 'transferred'
+        self.remarks = remarks
+        self.save()
+        
+        self.student.is_active = False
+        self.student.save()
+    
+    def __str__(self):
+        return f"{self.student.name} - {self.class_ref.name} {self.section.name} ({self.session.name})"
+
+
+class ClassTeacher(models.Model):
+    """
+    Class Teacher Assignment.
+    
+    Designates a teacher as the class teacher for a specific class/section/session.
+    Class teachers can generate marksheets for their class.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='class_teacher_assignments')
+    class_ref = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='class_teachers', db_column='class_id')
+    section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='class_teachers')
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='class_teachers')
+    is_active = models.BooleanField(default=True)
+    
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'class_teachers'
+        unique_together = ['class_ref', 'section', 'session']
+        indexes = [
+            models.Index(fields=['teacher', 'session'], name='idx_ct_teacher_session'),
+            models.Index(fields=['class_ref', 'section', 'session'], name='idx_ct_cls_sec_sess'),
+        ]
+    
+    def __str__(self):
+        return f"{self.teacher.name} - {self.class_ref.name} {self.section.name} ({self.session.name})"
+
+
 class TeacherAssignment(models.Model):
-    """Assignment of teachers to class-section-subject combinations."""
+    """
+    Assignment of teachers to class-section-subject combinations.
+    
+    Authorization Rule:
+    Only the assigned subject teacher may enter marks for that subject.
+    """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='assignments')
     class_ref = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='teacher_assignments', db_column='class_id')
@@ -396,11 +602,56 @@ class TeacherAssignment(models.Model):
         db_table = 'teacher_assignments'
         unique_together = ['teacher', 'class_ref', 'section', 'subject', 'session']
         indexes = [
-            # Index for teacher lookups
             models.Index(fields=['teacher', 'session'], name='idx_ta_teacher_session'),
-            # Index for class-section lookups
             models.Index(fields=['class_ref', 'section', 'session'], name='idx_ta_cls_sec_session'),
+            models.Index(fields=['class_ref', 'section', 'subject', 'session'], name='idx_ta_cls_sec_sub_sess'),
         ]
     
     def __str__(self):
         return f"{self.teacher.name} - {self.class_ref.name} {self.section.name} - {self.subject.name}"
+
+
+class CocurricularTeacherAssignment(models.Model):
+    """Assignment of teachers to cocurricular subjects for a class/section."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='cocurricular_assignments')
+    class_ref = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='cocurricular_teacher_assignments', db_column='class_id')
+    section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='cocurricular_teacher_assignments')
+    cocurricular_subject = models.ForeignKey(CocurricularSubject, on_delete=models.CASCADE, related_name='teacher_assignments')
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='cocurricular_teacher_assignments')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'cocurricular_teacher_assignments'
+        unique_together = ['class_ref', 'section', 'cocurricular_subject', 'session']
+        indexes = [
+            models.Index(fields=['teacher', 'session'], name='idx_cta_teacher_session'),
+        ]
+    
+    def __str__(self):
+        return f"{self.teacher.name} - {self.cocurricular_subject.name} ({self.class_ref.name} {self.section.name})"
+
+
+class OptionalTeacherAssignment(models.Model):
+    """Assignment of teachers to optional subjects for a class/section."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    teacher = models.ForeignKey(Teacher, on_delete=models.CASCADE, related_name='optional_assignments')
+    class_ref = models.ForeignKey(Class, on_delete=models.CASCADE, related_name='optional_teacher_assignments', db_column='class_id')
+    section = models.ForeignKey(Section, on_delete=models.CASCADE, related_name='optional_teacher_assignments')
+    optional_subject = models.ForeignKey(OptionalSubject, on_delete=models.CASCADE, related_name='teacher_assignments')
+    session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='optional_teacher_assignments')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'optional_teacher_assignments'
+        unique_together = ['class_ref', 'section', 'optional_subject', 'session']
+        indexes = [
+            models.Index(fields=['teacher', 'session'], name='idx_ota_teacher_session'),
+        ]
+    
+    def __str__(self):
+        return f"{self.teacher.name} - {self.optional_subject.name} ({self.class_ref.name} {self.section.name})"

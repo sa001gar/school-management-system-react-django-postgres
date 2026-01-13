@@ -151,6 +151,7 @@ export interface SchoolConfig {
 
 export interface Student {
   id: string;
+  student_id: string;  // Permanent unique student identifier
   roll_no: string;
   name: string;
   class_id: string | null;
@@ -385,3 +386,260 @@ export interface AssignedSubject extends Subject {
     isComplete: boolean;
   };
 }
+
+// ============================================================================
+// SMS UPGRADE - New Types for Session-based Student Management
+// ============================================================================
+
+// Session with lock status
+export interface Session {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  is_active: boolean;
+  is_locked: boolean;
+  created_at: string;
+}
+
+// Student Enrollment Status
+export type EnrollmentStatus = 'active' | 'promoted' | 'retained' | 'transferred' | 'graduated' | 'dropped';
+
+// Student Enrollment (Session-wise)
+export interface StudentEnrollment {
+  id: string;
+  student_id: string;
+  student_name: string;
+  student_permanent_id: string;
+  session_id: string;
+  session_name: string;
+  class_id: string;
+  class_name: string;
+  section_id: string;
+  section_name: string;
+  roll_no: string;
+  status: EnrollmentStatus;
+  promotion_date: string | null;
+  remarks: string;
+  created_at: string;
+}
+
+// Class Teacher Assignment
+export interface ClassTeacher {
+  id: string;
+  teacher_id: string;
+  teacher_name: string;
+  class_id: string;
+  class_name: string;
+  section_id: string;
+  section_name: string;
+  session_id: string;
+  session_name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+// Cocurricular Teacher Assignment
+export interface CocurricularTeacherAssignment {
+  id: string;
+  teacher_id: string;
+  teacher_name: string;
+  cocurricular_subject_name: string;
+  class_name: string;
+  section_name: string;
+  session_name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+// Optional Teacher Assignment
+export interface OptionalTeacherAssignment {
+  id: string;
+  teacher_id: string;
+  teacher_name: string;
+  optional_subject_name: string;
+  class_name: string;
+  section_name: string;
+  session_name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+// Teacher Assignment (Regular Subjects)
+export interface TeacherAssignment {
+  id: string;
+  teacher_id: string;
+  teacher_name: string;
+  class_id: string;
+  class_name: string;
+  section_id: string;
+  section_name: string;
+  subject_id: string;
+  subject_name: string;
+  session_id: string;
+  session_name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+// Student Promotion Request
+export interface StudentPromotionRequest {
+  enrollment_id: string;
+  new_class_id: string;
+  new_section_id: string;
+  new_session_id: string;
+  new_roll_no: string;
+}
+
+// Bulk Promotion Request
+export interface BulkPromotionRequest {
+  promotions: StudentPromotionRequest[];
+}
+
+// Student Retention Request
+export interface StudentRetentionRequest {
+  enrollment_id: string;
+  new_session_id: string;
+  new_roll_no?: string;
+}
+
+// Student Transfer Request
+export interface StudentTransferRequest {
+  enrollment_id: string;
+  remarks?: string;
+}
+
+// Fee Clearance Status
+export interface FeeClearanceStatus {
+  is_cleared: boolean;
+  pending_amount: number;
+  last_payment_date: string | null;
+}
+
+// Marksheet Generation Response
+export interface MarksheetResponse {
+  student?: Student;
+  results: StudentResult[];
+  cocurricular_results: StudentCocurricularResult[];
+  optional_results: StudentOptionalResult[];
+  summary: MarksheetSummary;
+  fee_status: 'cleared' | 'pending';
+}
+
+// Marksheet Generation Error (Fee Pending)
+export interface MarksheetBlockedResponse {
+  error: string;
+  message: string;
+  students_with_pending_fees?: Array<{
+    id: string;
+    student_id: string;
+    name: string;
+  }>;
+  fee_status?: 'pending';
+}
+
+// Admin Dashboard Stats
+export interface AdminDashboardStats {
+  session: Session | null;
+  counts: {
+    total_students: number;
+    session_students: number;
+    total_teachers: number;
+    total_classes: number;
+  };
+  fees: {
+    total_fees: string;
+    total_collected: string;
+    pending: string;
+    collection_rate: number;
+  };
+  recent_payments: Payment[];
+  class_distribution: Array<{
+    class_name: string;
+    count: number;
+  }>;
+}
+
+// Teacher's Pending Tasks
+export interface TeacherPendingTask {
+  assignment_id: string;
+  class_id: string;
+  class_name: string;
+  section_id: string;
+  section_name: string;
+  subject_id: string;
+  subject_name: string;
+  total_students: number;
+  first_term: {
+    entered: number;
+    total: number;
+    progress: number;
+  };
+  second_term: {
+    entered: number;
+    total: number;
+    progress: number;
+  };
+  third_term: {
+    entered: number;
+    total: number;
+    progress: number;
+  };
+}
+
+// Teacher's Assignments Response
+export interface TeacherAssignmentsResponse {
+  teacher: Teacher;
+  assignments: TeacherAssignment[];
+  session: Session | null;
+}
+
+// Teacher's Pending Tasks Response
+export interface TeacherPendingTasksResponse {
+  teacher: Teacher;
+  pending_tasks: TeacherPendingTask[];
+  session: Session | null;
+}
+
+// Marks Entry Authorization Check
+export interface MarksEntryAuthorizationResponse {
+  is_authorized: boolean;
+  error: string | null;
+  class: Class;
+  section: Section;
+  subject: Subject;
+  session: Session;
+}
+
+// Student Portal Login Response
+export interface StudentLoginResponse {
+  access: string;
+  refresh: string;
+  student: Student;
+}
+
+// Student Fees Summary
+export interface StudentFeesSummary {
+  student: Student;
+  fees: StudentFee[];
+  payments: Payment[];
+  summary: {
+    total_gross: string;
+    total_discount: string;
+    total_net: string;
+    total_paid: string;
+    balance: string;
+  };
+}
+
+// Extended Student with additional fields
+export interface StudentExtended extends Student {
+  guardian_name?: string;
+  guardian_relation?: string;
+  alternate_phone?: string;
+  email?: string | null;
+  admission_date?: string | null;
+  admission_class_id?: string | null;
+  admission_session_id?: string | null;
+}
+

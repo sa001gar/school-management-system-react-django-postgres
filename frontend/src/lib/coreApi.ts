@@ -454,6 +454,267 @@ export const studentsApi = {
   },
 };
 
+// ============================================================================
+// SMS UPGRADE - New API Endpoints
+// ============================================================================
+
+import type {
+  StudentEnrollment,
+  ClassTeacher,
+  TeacherAssignment,
+  CocurricularTeacherAssignment,
+  OptionalTeacherAssignment,
+  StudentPromotionRequest,
+  BulkPromotionRequest,
+  StudentRetentionRequest,
+  StudentTransferRequest,
+  AdminDashboardStats,
+  TeacherAssignmentsResponse,
+  TeacherPendingTasksResponse,
+  MarksEntryAuthorizationResponse,
+  StudentLoginResponse,
+  StudentFeesSummary,
+  MarksheetResponse,
+  MarksheetBlockedResponse,
+} from './types';
+
+// Student Enrollments API
+export const studentEnrollmentsApi = {
+  getAll: async (params?: {
+    session_id?: string;
+    class_id?: string;
+    section_id?: string;
+    status?: string;
+  }): Promise<StudentEnrollment[]> => {
+    const response = await api.get<{ results?: StudentEnrollment[] } | StudentEnrollment[]>(
+      '/student-enrollments/',
+      params
+    );
+    return Array.isArray(response) ? response : (response.results || []);
+  },
+
+  getById: async (id: string): Promise<StudentEnrollment> => {
+    return api.get<StudentEnrollment>(`/student-enrollments/${id}/`);
+  },
+
+  create: async (data: {
+    student_id: string;
+    session_id: string;
+    class_id: string;
+    section_id: string;
+    roll_no: string;
+  }): Promise<StudentEnrollment> => {
+    return api.post<StudentEnrollment>('/student-enrollments/', data);
+  },
+
+  promote: async (data: StudentPromotionRequest): Promise<StudentEnrollment> => {
+    return api.post<StudentEnrollment>('/student-enrollments/promote/', data);
+  },
+
+  bulkPromote: async (data: BulkPromotionRequest): Promise<StudentEnrollment[]> => {
+    return api.post<StudentEnrollment[]>('/student-enrollments/bulk-promote/', data);
+  },
+
+  retain: async (data: StudentRetentionRequest): Promise<StudentEnrollment> => {
+    return api.post<StudentEnrollment>('/student-enrollments/retain/', data);
+  },
+
+  transfer: async (data: StudentTransferRequest): Promise<StudentEnrollment> => {
+    return api.post<StudentEnrollment>('/student-enrollments/transfer/', data);
+  },
+};
+
+// Class Teachers API
+export const classTeachersApi = {
+  getAll: async (sessionId?: string): Promise<ClassTeacher[]> => {
+    const params = sessionId ? { session_id: sessionId } : undefined;
+    const response = await api.get<{ results?: ClassTeacher[] } | ClassTeacher[]>(
+      '/class-teachers/',
+      params
+    );
+    return Array.isArray(response) ? response : (response.results || []);
+  },
+
+  create: async (data: {
+    teacher_id: string;
+    class_id: string;
+    section_id: string;
+    session_id: string;
+  }): Promise<ClassTeacher> => {
+    return api.post<ClassTeacher>('/class-teachers/', data);
+  },
+
+  update: async (id: string, data: Partial<ClassTeacher>): Promise<ClassTeacher> => {
+    return api.patch<ClassTeacher>(`/class-teachers/${id}/`, data);
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/class-teachers/${id}/`);
+  },
+};
+
+// Teacher Assignments API (Regular Subjects)
+export const teacherAssignmentsApi = {
+  getAll: async (params?: {
+    teacher_id?: string;
+    session_id?: string;
+    class_id?: string;
+  }): Promise<TeacherAssignment[]> => {
+    const response = await api.get<{ results?: TeacherAssignment[] } | TeacherAssignment[]>(
+      '/teacher-assignments/',
+      params
+    );
+    return Array.isArray(response) ? response : (response.results || []);
+  },
+
+  create: async (data: {
+    teacher_id: string;
+    class_id: string;
+    section_id: string;
+    subject_id: string;
+    session_id: string;
+  }): Promise<TeacherAssignment> => {
+    return api.post<TeacherAssignment>('/teacher-assignments/', data);
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/teacher-assignments/${id}/`);
+  },
+};
+
+// Cocurricular Teacher Assignments API
+export const cocurricularTeacherAssignmentsApi = {
+  getAll: async (sessionId?: string): Promise<CocurricularTeacherAssignment[]> => {
+    const params = sessionId ? { session_id: sessionId } : undefined;
+    const response = await api.get<{ results?: CocurricularTeacherAssignment[] } | CocurricularTeacherAssignment[]>(
+      '/cocurricular-teacher-assignments/',
+      params
+    );
+    return Array.isArray(response) ? response : (response.results || []);
+  },
+
+  create: async (data: {
+    teacher_id: string;
+    class_id: string;
+    section_id: string;
+    cocurricular_subject_id: string;
+    session_id: string;
+  }): Promise<CocurricularTeacherAssignment> => {
+    return api.post<CocurricularTeacherAssignment>('/cocurricular-teacher-assignments/', data);
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/cocurricular-teacher-assignments/${id}/`);
+  },
+};
+
+// Optional Teacher Assignments API
+export const optionalTeacherAssignmentsApi = {
+  getAll: async (sessionId?: string): Promise<OptionalTeacherAssignment[]> => {
+    const params = sessionId ? { session_id: sessionId } : undefined;
+    const response = await api.get<{ results?: OptionalTeacherAssignment[] } | OptionalTeacherAssignment[]>(
+      '/optional-teacher-assignments/',
+      params
+    );
+    return Array.isArray(response) ? response : (response.results || []);
+  },
+
+  create: async (data: {
+    teacher_id: string;
+    class_id: string;
+    section_id: string;
+    optional_subject_id: string;
+    session_id: string;
+  }): Promise<OptionalTeacherAssignment> => {
+    return api.post<OptionalTeacherAssignment>('/optional-teacher-assignments/', data);
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/optional-teacher-assignments/${id}/`);
+  },
+};
+
+// Session Management API
+export const sessionManagementApi = {
+  lockSession: async (sessionId: string): Promise<{ message: string; session: Session }> => {
+    return api.post('/admin/session-lock/', { session_id: sessionId });
+  },
+};
+
+// Admin Dashboard API
+export const adminDashboardApi = {
+  getStats: async (): Promise<AdminDashboardStats> => {
+    return api.get<AdminDashboardStats>('/admin/dashboard-stats/');
+  },
+};
+
+// Teacher Dashboard API
+export const teacherDashboardApi = {
+  getMyAssignments: async (): Promise<TeacherAssignmentsResponse> => {
+    return api.get<TeacherAssignmentsResponse>('/teacher/my-assignments/');
+  },
+
+  getPendingTasks: async (): Promise<TeacherPendingTasksResponse> => {
+    return api.get<TeacherPendingTasksResponse>('/teacher/pending-tasks/');
+  },
+
+  checkMarksAuthorization: async (params: {
+    class_id: string;
+    section_id: string;
+    subject_id: string;
+    session_id: string;
+  }): Promise<MarksEntryAuthorizationResponse> => {
+    return api.get<MarksEntryAuthorizationResponse>('/teacher/check-marks-authorization/', params);
+  },
+};
+
+// Marksheet Generation API (with fee validation)
+export const marksheetApi = {
+  getStudentMarksheet: async (
+    studentId: string,
+    sessionId?: string,
+    skipFeeCheck?: boolean
+  ): Promise<MarksheetResponse | MarksheetBlockedResponse> => {
+    const params: Record<string, string> = { student_id: studentId };
+    if (sessionId) params.session_id = sessionId;
+    if (skipFeeCheck) params.skip_fee_check = 'true';
+    return api.get('/marksheet/', params);
+  },
+
+  getClassMarksheet: async (
+    classId: string,
+    sectionId: string,
+    sessionId: string,
+    skipFeeCheck?: boolean
+  ): Promise<any> => {
+    const params: Record<string, string> = {
+      class_id: classId,
+      section_id: sectionId,
+      session_id: sessionId,
+    };
+    if (skipFeeCheck) params.skip_fee_check = 'true';
+    return api.get('/marksheet/', params);
+  },
+};
+
+// Student Portal API (for student self-service)
+export const studentPortalApi = {
+  login: async (studentId: string, password: string): Promise<StudentLoginResponse> => {
+    return api.post<StudentLoginResponse>('/auth/student-login/', {
+      student_id: studentId,
+      password,
+    });
+  },
+
+  getProfile: async (): Promise<{ student: Student }> => {
+    return api.get('/student/me/');
+  },
+
+  getFees: async (): Promise<StudentFeesSummary> => {
+    return api.get<StudentFeesSummary>('/student/fees/');
+  },
+};
+
 // Re-export all APIs
 export {
   sessionsApi as sessions,
@@ -469,4 +730,15 @@ export {
   classMarksDistributionApi as classMarksDistribution,
   schoolConfigApi as schoolConfig,
   studentsApi as students,
+  // SMS Upgrade APIs
+  studentEnrollmentsApi as studentEnrollments,
+  classTeachersApi as classTeachers,
+  teacherAssignmentsApi as teacherAssignments,
+  cocurricularTeacherAssignmentsApi as cocurricularTeacherAssignments,
+  optionalTeacherAssignmentsApi as optionalTeacherAssignments,
+  sessionManagementApi as sessionManagement,
+  adminDashboardApi as adminDashboard,
+  teacherDashboardApi as teacherDashboard,
+  marksheetApi as marksheet,
+  studentPortalApi as studentPortal,
 };

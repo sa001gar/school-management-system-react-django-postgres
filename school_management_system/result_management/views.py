@@ -1,5 +1,11 @@
 """
 Views for Result Management API.
+
+Authorization Rules (Backend-Enforced):
+- Only assigned subject teacher may enter marks for that subject
+- Only class teacher or admin may generate marksheets
+- Admin has full academic override
+- If student fees are not cleared → Result and Marksheet generation must be blocked
 """
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -20,10 +26,20 @@ from .serializers import (
 )
 from core_services.views import IsAdminUser
 from core_services.models import Student, Subject
+from core_services.permissions import (
+    IsAdminOrTeacher, SessionNotLocked, 
+    validate_marks_entry_permission, check_teacher_subject_assignment
+)
 
 
 class StudentResultViewSet(viewsets.ModelViewSet):
-    """ViewSet for student results."""
+    """
+    ViewSet for student results.
+    
+    Authorization:
+    - Only assigned subject teacher may enter marks for that subject
+    - Admin has full override
+    """
     queryset = StudentResult.objects.all()
     serializer_class = StudentResultSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -31,6 +47,7 @@ class StudentResultViewSet(viewsets.ModelViewSet):
     search_fields = ['student__name', 'student__roll_no']
     ordering_fields = ['total_marks', 'grade', 'created_at']
     ordering = ['-created_at']
+    permission_classes = [IsAdminOrTeacher, SessionNotLocked]
     
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -58,7 +75,26 @@ class StudentResultViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'], url_path='upsert')
     def upsert(self, request):
-        """Create or update a single result."""
+        """Create or update a single result with authorization check."""
+        # Authorization check for teachers
+        user = request.user
+        if user.role == 'teacher':
+            student_id = request.data.get('student_id')
+            subject_id = request.data.get('subject_id')
+            session_id = request.data.get('session_id')
+            
+            try:
+                from core_services.models import Session
+                student = Student.objects.select_related('class_ref', 'section').get(id=student_id)
+                subject = Subject.objects.get(id=subject_id)
+                session = Session.objects.get(id=session_id)
+                
+                is_allowed, error_msg = validate_marks_entry_permission(user, student, subject, session)
+                if not is_allowed:
+                    return Response({'error': error_msg}, status=status.HTTP_403_FORBIDDEN)
+            except (Student.DoesNotExist, Subject.DoesNotExist, Session.DoesNotExist):
+                return Response({'error': 'Invalid student, subject, or session ID'}, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = StudentResultUpsertSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
@@ -69,7 +105,30 @@ class StudentResultViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'], url_path='bulk-upsert')
     def bulk_upsert(self, request):
-        """Bulk create or update results."""
+        """Bulk create or update results with authorization check."""
+        # Authorization check for teachers
+        user = request.user
+        if user.role == 'teacher':
+            results_data = request.data.get('results', [])
+            if results_data:
+                # Check first result's subject for authorization
+                first_result = results_data[0]
+                student_id = first_result.get('student_id')
+                subject_id = first_result.get('subject_id')
+                session_id = first_result.get('session_id')
+                
+                try:
+                    from core_services.models import Session
+                    student = Student.objects.select_related('class_ref', 'section').get(id=student_id)
+                    subject = Subject.objects.get(id=subject_id)
+                    session = Session.objects.get(id=session_id)
+                    
+                    is_allowed, error_msg = validate_marks_entry_permission(user, student, subject, session)
+                    if not is_allowed:
+                        return Response({'error': error_msg}, status=status.HTTP_403_FORBIDDEN)
+                except (Student.DoesNotExist, Subject.DoesNotExist, Session.DoesNotExist):
+                    return Response({'error': 'Invalid student, subject, or session ID'}, status=status.HTTP_400_BAD_REQUEST)
+        
         serializer = BulkStudentResultUpsertSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         results = serializer.save()

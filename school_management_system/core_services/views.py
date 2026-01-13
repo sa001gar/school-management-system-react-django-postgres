@@ -935,6 +935,20 @@ class TeacherAssignmentViewSet(CacheMixin, viewsets.ModelViewSet):
         if teacher_id:
             queryset = queryset.filter(teacher_id=teacher_id)
         
+        # Support session_id query param (frontend uses session_id, not session)
+        session_id = self.request.query_params.get('session_id')
+        if session_id:
+            queryset = queryset.filter(session_id=session_id)
+        
+        # Support class_id and section_id query params
+        class_id = self.request.query_params.get('class_id')
+        if class_id:
+            queryset = queryset.filter(class_ref_id=class_id)
+        
+        section_id = self.request.query_params.get('section_id')
+        if section_id:
+            queryset = queryset.filter(section_id=section_id)
+        
         return queryset
     
     def perform_create(self, serializer):
@@ -1169,3 +1183,431 @@ class AdminDashboardStatsView(APIView):
                 for item in class_distribution if item['class_ref__name']
             ]
         })
+
+
+# ============================================================================
+# STUDENT ENROLLMENT & LIFECYCLE MANAGEMENT
+# ============================================================================
+
+class StudentEnrollmentViewSet(viewsets.ModelViewSet):
+    """ViewSet for student enrollments."""
+    from .models import StudentEnrollment
+    from .serializers import StudentEnrollmentSerializer, StudentEnrollmentCreateSerializer
+    
+    queryset = StudentEnrollment.objects.select_related(
+        'student', 'class_ref', 'section', 'session'
+    )
+    serializer_class = StudentEnrollmentSerializer
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['student', 'session', 'class_ref', 'section', 'status']
+    search_fields = ['student__name', 'student__student_id', 'roll_no']
+    ordering_fields = ['roll_no', 'created_at']
+    ordering = ['roll_no']
+    permission_classes = [IsAdminUser]
+    
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            from .serializers import StudentEnrollmentCreateSerializer
+            return StudentEnrollmentCreateSerializer
+        from .serializers import StudentEnrollmentSerializer
+        return StudentEnrollmentSerializer
+    
+    def get_queryset(self):
+        from .models import StudentEnrollment
+        queryset = StudentEnrollment.objects.select_related(
+            'student', 'class_ref', 'section', 'session'
+        )
+        
+        session_id = self.request.query_params.get('session_id')
+        class_id = self.request.query_params.get('class_id')
+        section_id = self.request.query_params.get('section_id')
+        status_filter = self.request.query_params.get('status')
+        
+        if session_id:
+            queryset = queryset.filter(session_id=session_id)
+        if class_id:
+            queryset = queryset.filter(class_ref_id=class_id)
+        if section_id:
+            queryset = queryset.filter(section_id=section_id)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        return queryset
+    
+    @action(detail=False, methods=['post'], url_path='promote')
+    def promote(self, request):
+        """Promote a single student."""
+        from .serializers import StudentPromotionSerializer
+        
+        serializer = StudentPromotionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_enrollment = serializer.save()
+        
+        from .serializers import StudentEnrollmentSerializer
+        return Response(
+            StudentEnrollmentSerializer(new_enrollment).data,
+            status=status.HTTP_201_CREATED
+        )
+    
+    @action(detail=False, methods=['post'], url_path='bulk-promote')
+    def bulk_promote(self, request):
+        """Bulk promote students."""
+        from .serializers import BulkPromotionSerializer, StudentEnrollmentSerializer
+        
+        serializer = BulkPromotionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_enrollments = serializer.save()
+        
+        return Response(
+            StudentEnrollmentSerializer(new_enrollments, many=True).data,
+            status=status.HTTP_201_CREATED
+        )
+    
+    @action(detail=False, methods=['post'], url_path='retain')
+    def retain(self, request):
+        """Retain a student in the same class."""
+        from .serializers import StudentRetentionSerializer, StudentEnrollmentSerializer
+        
+        serializer = StudentRetentionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_enrollment = serializer.save()
+        
+        return Response(
+            StudentEnrollmentSerializer(new_enrollment).data,
+            status=status.HTTP_201_CREATED
+        )
+    
+    @action(detail=False, methods=['post'], url_path='transfer')
+    def transfer(self, request):
+        """Transfer a student out."""
+        from .serializers import StudentTransferSerializer, StudentEnrollmentSerializer
+        
+        serializer = StudentTransferSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        enrollment = serializer.save()
+        
+        return Response(
+            StudentEnrollmentSerializer(enrollment).data,
+            status=status.HTTP_200_OK
+        )
+
+
+# ============================================================================
+# CLASS TEACHER MANAGEMENT
+# ============================================================================
+
+class ClassTeacherViewSet(viewsets.ModelViewSet):
+    """ViewSet for class teacher assignments."""
+    from .models import ClassTeacher
+    from .serializers import ClassTeacherSerializer, ClassTeacherCreateSerializer
+    
+    queryset = ClassTeacher.objects.select_related(
+        'teacher', 'class_ref', 'section', 'session'
+    )
+    serializer_class = ClassTeacherSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ['teacher', 'class_ref', 'section', 'session', 'is_active']
+    ordering_fields = ['created_at']
+    ordering = ['-created_at']
+    permission_classes = [IsAdminUser]
+    
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            from .serializers import ClassTeacherCreateSerializer
+            return ClassTeacherCreateSerializer
+        from .serializers import ClassTeacherSerializer
+        return ClassTeacherSerializer
+    
+    def get_queryset(self):
+        from .models import ClassTeacher
+        queryset = ClassTeacher.objects.select_related(
+            'teacher', 'class_ref', 'section', 'session'
+        )
+        
+        session_id = self.request.query_params.get('session_id')
+        if session_id:
+            queryset = queryset.filter(session_id=session_id)
+        
+        return queryset
+
+
+# ============================================================================
+# SESSION MANAGEMENT (Lock/Unlock)
+# ============================================================================
+
+class SessionLockView(APIView):
+    """View to lock a session, preventing further modifications."""
+    permission_classes = [IsAdminUser]
+    
+    def post(self, request):
+        from .serializers import SessionLockSerializer
+        
+        serializer = SessionLockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        session = serializer.save()
+        
+        return Response({
+            'message': f"Session '{session.name}' has been locked.",
+            'session': SessionSerializer(session).data
+        })
+
+
+# ============================================================================
+# COCURRICULAR & OPTIONAL TEACHER ASSIGNMENTS
+# ============================================================================
+
+class CocurricularTeacherAssignmentViewSet(viewsets.ModelViewSet):
+    """ViewSet for cocurricular teacher assignments."""
+    from .models import CocurricularTeacherAssignment
+    from .serializers import CocurricularTeacherAssignmentSerializer, CocurricularTeacherAssignmentCreateSerializer
+    
+    queryset = CocurricularTeacherAssignment.objects.select_related(
+        'teacher', 'class_ref', 'section', 'cocurricular_subject', 'session'
+    )
+    serializer_class = CocurricularTeacherAssignmentSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ['teacher', 'class_ref', 'section', 'cocurricular_subject', 'session', 'is_active']
+    ordering = ['-created_at']
+    permission_classes = [IsAdminUser]
+    
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            from .serializers import CocurricularTeacherAssignmentCreateSerializer
+            return CocurricularTeacherAssignmentCreateSerializer
+        from .serializers import CocurricularTeacherAssignmentSerializer
+        return CocurricularTeacherAssignmentSerializer
+
+
+class OptionalTeacherAssignmentViewSet(viewsets.ModelViewSet):
+    """ViewSet for optional teacher assignments."""
+    from .models import OptionalTeacherAssignment
+    from .serializers import OptionalTeacherAssignmentSerializer, OptionalTeacherAssignmentCreateSerializer
+    
+    queryset = OptionalTeacherAssignment.objects.select_related(
+        'teacher', 'class_ref', 'section', 'optional_subject', 'session'
+    )
+    serializer_class = OptionalTeacherAssignmentSerializer
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ['teacher', 'class_ref', 'section', 'optional_subject', 'session', 'is_active']
+    ordering = ['-created_at']
+    permission_classes = [IsAdminUser]
+    
+    def get_serializer_class(self):
+        if self.action in ['create', 'update', 'partial_update']:
+            from .serializers import OptionalTeacherAssignmentCreateSerializer
+            return OptionalTeacherAssignmentCreateSerializer
+        from .serializers import OptionalTeacherAssignmentSerializer
+        return OptionalTeacherAssignmentSerializer
+
+
+# ============================================================================
+# ENHANCED MARKSHEET GENERATION WITH FEE VALIDATION
+# ============================================================================
+
+class MarksheetGenerationView(APIView):
+    """
+    View for generating marksheets with fee validation.
+    
+    Critical Business Rule:
+    If student fees are not cleared → Result and Marksheet generation must be blocked
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        """Generate marksheet for a student or class/section."""
+        from .permissions import validate_marksheet_generation_permission, check_student_fees_cleared
+        from result_management.models import StudentResult, StudentCocurricularResult, StudentOptionalResult
+        from result_management.serializers import (
+            StudentResultSerializer, StudentCocurricularResultSerializer, StudentOptionalResultSerializer
+        )
+        
+        student_id = request.query_params.get('student_id')
+        class_id = request.query_params.get('class_id')
+        section_id = request.query_params.get('section_id')
+        session_id = request.query_params.get('session_id')
+        skip_fee_check = request.query_params.get('skip_fee_check', 'false').lower() == 'true'
+        
+        if student_id:
+            # Single student marksheet
+            try:
+                student = Student.objects.select_related(
+                    'class_ref', 'section', 'session'
+                ).get(id=student_id)
+            except Student.DoesNotExist:
+                return Response({'error': 'Student not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            session = Session.objects.get(id=session_id) if session_id else student.session
+            
+            # Check fee clearance
+            if not skip_fee_check and not check_student_fees_cleared(student, session):
+                return Response({
+                    'error': 'Cannot generate marksheet',
+                    'message': 'Student has pending fees. Please clear all dues before generating marksheet.',
+                    'fee_status': 'pending'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Get results
+            results = StudentResult.objects.filter(
+                student=student, session=session
+            ).select_related('subject')
+            
+            cocurricular_results = StudentCocurricularResult.objects.filter(
+                student=student, session=session
+            ).select_related('cocurricular_subject')
+            
+            optional_results = StudentOptionalResult.objects.filter(
+                student=student, session=session
+            ).select_related('optional_subject')
+            
+            # Calculate totals
+            total_marks = sum(r.total_marks for r in results)
+            total_full_marks = sum(r.calculate_full_marks() for r in results)
+            optional_total = sum(r.obtained_marks for r in optional_results)
+            optional_full = sum(r.full_marks for r in optional_results)
+            
+            grand_total = total_marks + optional_total
+            grand_full = total_full_marks + optional_full
+            percentage = (grand_total / grand_full * 100) if grand_full > 0 else 0
+            
+            return Response({
+                'student': StudentSerializer(student).data,
+                'results': StudentResultSerializer(results, many=True).data,
+                'cocurricular_results': StudentCocurricularResultSerializer(cocurricular_results, many=True).data,
+                'optional_results': StudentOptionalResultSerializer(optional_results, many=True).data,
+                'summary': {
+                    'total_marks': total_marks,
+                    'total_full_marks': total_full_marks,
+                    'optional_total': optional_total,
+                    'optional_full': optional_full,
+                    'grand_total': grand_total,
+                    'grand_full': grand_full,
+                    'percentage': round(percentage, 2)
+                },
+                'fee_status': 'cleared'
+            })
+        
+        elif all([class_id, section_id, session_id]):
+            # Class/Section marksheet
+            try:
+                class_obj = Class.objects.get(id=class_id)
+                section_obj = Section.objects.get(id=section_id)
+                session_obj = Session.objects.get(id=session_id)
+            except (Class.DoesNotExist, Section.DoesNotExist, Session.DoesNotExist):
+                return Response({'error': 'Invalid class, section, or session'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Validate permission
+            is_allowed, error_msg, students_with_pending = validate_marksheet_generation_permission(
+                request.user, class_obj, section_obj, session_obj, check_fees=not skip_fee_check
+            )
+            
+            if not is_allowed:
+                return Response({
+                    'error': 'Cannot generate marksheet',
+                    'message': error_msg,
+                    'students_with_pending_fees': students_with_pending
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Get all students
+            students = Student.objects.filter(
+                class_ref=class_obj,
+                section=section_obj,
+                session=session_obj,
+                is_active=True
+            ).order_by('roll_no')
+            
+            marksheet_data = []
+            for student in students:
+                results = StudentResult.objects.filter(
+                    student=student, session=session_obj
+                ).select_related('subject')
+                
+                optional_results = StudentOptionalResult.objects.filter(
+                    student=student, session=session_obj
+                )
+                
+                total_marks = sum(r.total_marks for r in results)
+                total_full = sum(r.calculate_full_marks() for r in results)
+                optional_total = sum(r.obtained_marks for r in optional_results)
+                optional_full = sum(r.full_marks for r in optional_results)
+                
+                grand_total = total_marks + optional_total
+                grand_full = total_full + optional_full
+                percentage = (grand_total / grand_full * 100) if grand_full > 0 else 0
+                
+                marksheet_data.append({
+                    'student': StudentSerializer(student).data,
+                    'total_marks': grand_total,
+                    'total_full_marks': grand_full,
+                    'percentage': round(percentage, 2)
+                })
+            
+            # Sort by percentage and assign positions
+            sorted_data = sorted(marksheet_data, key=lambda x: x['percentage'], reverse=True)
+            for i, item in enumerate(sorted_data):
+                item['position'] = i + 1
+            
+            return Response({
+                'class': ClassSerializer(class_obj).data,
+                'section': SectionSerializer(section_obj).data,
+                'session': SessionSerializer(session_obj).data,
+                'students': sorted_data,
+                'total_students': len(sorted_data)
+            })
+        
+        return Response(
+            {'error': 'Please provide student_id or class_id, section_id, and session_id'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+# ============================================================================
+# TEACHER MARKS ENTRY AUTHORIZATION CHECK
+# ============================================================================
+
+class CheckMarksEntryAuthorizationView(APIView):
+    """
+    Check if current user can enter marks for a specific subject/class/section.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        from .permissions import validate_marks_entry_permission
+        
+        class_id = request.query_params.get('class_id')
+        section_id = request.query_params.get('section_id')
+        subject_id = request.query_params.get('subject_id')
+        session_id = request.query_params.get('session_id')
+        
+        if not all([class_id, section_id, subject_id, session_id]):
+            return Response({
+                'error': 'class_id, section_id, subject_id, and session_id are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            class_obj = Class.objects.get(id=class_id)
+            section_obj = Section.objects.get(id=section_id)
+            subject_obj = Subject.objects.get(id=subject_id)
+            session_obj = Session.objects.get(id=session_id)
+        except (Class.DoesNotExist, Section.DoesNotExist, Subject.DoesNotExist, Session.DoesNotExist):
+            return Response({'error': 'Invalid IDs provided'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Create a mock student object for permission check
+        class MockStudent:
+            def __init__(self, class_ref, section):
+                self.class_ref = class_ref
+                self.section = section
+        
+        mock_student = MockStudent(class_obj, section_obj)
+        is_allowed, error_msg = validate_marks_entry_permission(
+            request.user, mock_student, subject_obj, session_obj
+        )
+        
+        return Response({
+            'is_authorized': is_allowed,
+            'error': error_msg,
+            'class': ClassSerializer(class_obj).data,
+            'section': SectionSerializer(section_obj).data,
+            'subject': SubjectSerializer(subject_obj).data,
+            'session': SessionSerializer(session_obj).data
+        })
+

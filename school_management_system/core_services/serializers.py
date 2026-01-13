@@ -9,7 +9,8 @@ from .models import (
     CustomUser, Admin, Teacher, Session, Class, Section,
     Subject, CocurricularSubject, OptionalSubject, ClassSubjectAssignment,
     ClassOptionalConfig, ClassOptionalAssignment, ClassCocurricularConfig,
-    ClassMarksDistribution, SchoolConfig, Student, TeacherAssignment
+    ClassMarksDistribution, SchoolConfig, Student, TeacherAssignment,
+    StudentEnrollment, ClassTeacher, CocurricularTeacherAssignment, OptionalTeacherAssignment
 )
 
 
@@ -506,3 +507,373 @@ class TeacherAssignmentCreateSerializer(serializers.ModelSerializer):
         validated_data['session'] = Session.objects.get(id=session_id)
         
         return super().create(validated_data)
+
+
+# ============================================================================
+# Session-Based Enrollment Serializers
+# ============================================================================
+
+class SessionSerializer(serializers.ModelSerializer):
+    """Serializer for academic sessions with lock status."""
+    class Meta:
+        model = Session
+        fields = ['id', 'name', 'start_date', 'end_date', 'is_active', 'is_locked', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
+class StudentEnrollmentSerializer(serializers.ModelSerializer):
+    """Serializer for student session enrollments."""
+    student_id = serializers.UUIDField(source='student.id', read_only=True)
+    student_name = serializers.CharField(source='student.name', read_only=True)
+    student_permanent_id = serializers.CharField(source='student.student_id', read_only=True)
+    class_id = serializers.UUIDField(source='class_ref.id', read_only=True)
+    class_name = serializers.CharField(source='class_ref.name', read_only=True)
+    section_id = serializers.UUIDField(source='section.id', read_only=True)
+    section_name = serializers.CharField(source='section.name', read_only=True)
+    session_id = serializers.UUIDField(source='session.id', read_only=True)
+    session_name = serializers.CharField(source='session.name', read_only=True)
+    
+    class Meta:
+        model = StudentEnrollment
+        fields = [
+            'id', 'student_id', 'student_name', 'student_permanent_id',
+            'session_id', 'session_name', 'class_id', 'class_name',
+            'section_id', 'section_name', 'roll_no', 'status',
+            'promotion_date', 'remarks', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class StudentEnrollmentCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating student enrollments."""
+    student_id = serializers.UUIDField(write_only=True)
+    class_id = serializers.UUIDField(write_only=True)
+    section_id = serializers.UUIDField(write_only=True)
+    session_id = serializers.UUIDField(write_only=True)
+    
+    class Meta:
+        model = StudentEnrollment
+        fields = ['id', 'student_id', 'session_id', 'class_id', 'section_id', 'roll_no', 'status', 'created_at']
+        read_only_fields = ['id', 'created_at']
+    
+    def validate(self, data):
+        session = Session.objects.get(id=data['session_id'])
+        if session.is_locked:
+            raise serializers.ValidationError("Cannot create enrollment in a locked session.")
+        return data
+    
+    def create(self, validated_data):
+        student_id = validated_data.pop('student_id')
+        class_id = validated_data.pop('class_id')
+        section_id = validated_data.pop('section_id')
+        session_id = validated_data.pop('session_id')
+        
+        validated_data['student'] = Student.objects.get(id=student_id)
+        validated_data['class_ref'] = Class.objects.get(id=class_id)
+        validated_data['section'] = Section.objects.get(id=section_id)
+        validated_data['session'] = Session.objects.get(id=session_id)
+        
+        return super().create(validated_data)
+
+
+class StudentPromotionSerializer(serializers.Serializer):
+    """Serializer for promoting students to next class/session."""
+    enrollment_id = serializers.UUIDField()
+    new_class_id = serializers.UUIDField()
+    new_section_id = serializers.UUIDField()
+    new_session_id = serializers.UUIDField()
+    new_roll_no = serializers.CharField(max_length=50)
+    
+    def validate(self, data):
+        try:
+            enrollment = StudentEnrollment.objects.get(id=data['enrollment_id'])
+            if enrollment.status != 'active':
+                raise serializers.ValidationError("Only active enrollments can be promoted.")
+            data['enrollment'] = enrollment
+        except StudentEnrollment.DoesNotExist:
+            raise serializers.ValidationError("Enrollment not found.")
+        
+        try:
+            new_session = Session.objects.get(id=data['new_session_id'])
+            if new_session.is_locked:
+                raise serializers.ValidationError("Cannot promote to a locked session.")
+            data['new_session'] = new_session
+        except Session.DoesNotExist:
+            raise serializers.ValidationError("New session not found.")
+        
+        try:
+            data['new_class'] = Class.objects.get(id=data['new_class_id'])
+        except Class.DoesNotExist:
+            raise serializers.ValidationError("New class not found.")
+        
+        try:
+            data['new_section'] = Section.objects.get(id=data['new_section_id'])
+        except Section.DoesNotExist:
+            raise serializers.ValidationError("New section not found.")
+        
+        return data
+    
+    def create(self, validated_data):
+        enrollment = validated_data['enrollment']
+        return enrollment.promote_to_next_class(
+            new_class=validated_data['new_class'],
+            new_section=validated_data['new_section'],
+            new_session=validated_data['new_session'],
+            new_roll_no=validated_data['new_roll_no']
+        )
+
+
+class BulkPromotionSerializer(serializers.Serializer):
+    """Serializer for bulk promoting students."""
+    promotions = StudentPromotionSerializer(many=True)
+    
+    @transaction.atomic
+    def create(self, validated_data):
+        results = []
+        for promotion_data in validated_data['promotions']:
+            enrollment = promotion_data['enrollment']
+            new_enrollment = enrollment.promote_to_next_class(
+                new_class=promotion_data['new_class'],
+                new_section=promotion_data['new_section'],
+                new_session=promotion_data['new_session'],
+                new_roll_no=promotion_data['new_roll_no']
+            )
+            results.append(new_enrollment)
+        return results
+
+
+class StudentRetentionSerializer(serializers.Serializer):
+    """Serializer for retaining students in same class."""
+    enrollment_id = serializers.UUIDField()
+    new_session_id = serializers.UUIDField()
+    new_roll_no = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    
+    def validate(self, data):
+        try:
+            enrollment = StudentEnrollment.objects.get(id=data['enrollment_id'])
+            data['enrollment'] = enrollment
+        except StudentEnrollment.DoesNotExist:
+            raise serializers.ValidationError("Enrollment not found.")
+        
+        try:
+            data['new_session'] = Session.objects.get(id=data['new_session_id'])
+        except Session.DoesNotExist:
+            raise serializers.ValidationError("New session not found.")
+        
+        return data
+    
+    def create(self, validated_data):
+        enrollment = validated_data['enrollment']
+        return enrollment.retain_in_same_class(
+            new_session=validated_data['new_session'],
+            new_roll_no=validated_data.get('new_roll_no')
+        )
+
+
+class StudentTransferSerializer(serializers.Serializer):
+    """Serializer for transferring students out."""
+    enrollment_id = serializers.UUIDField()
+    remarks = serializers.CharField(required=False, allow_blank=True)
+    
+    def validate(self, data):
+        try:
+            enrollment = StudentEnrollment.objects.get(id=data['enrollment_id'])
+            data['enrollment'] = enrollment
+        except StudentEnrollment.DoesNotExist:
+            raise serializers.ValidationError("Enrollment not found.")
+        return data
+    
+    def create(self, validated_data):
+        enrollment = validated_data['enrollment']
+        enrollment.transfer_out(remarks=validated_data.get('remarks', ''))
+        return enrollment
+
+
+# ============================================================================
+# Class Teacher Serializers
+# ============================================================================
+
+class ClassTeacherSerializer(serializers.ModelSerializer):
+    """Serializer for class teacher assignments."""
+    teacher_id = serializers.UUIDField(source='teacher.id', read_only=True)
+    teacher_name = serializers.CharField(source='teacher.name', read_only=True)
+    class_id = serializers.UUIDField(source='class_ref.id', read_only=True)
+    class_name = serializers.CharField(source='class_ref.name', read_only=True)
+    section_id = serializers.UUIDField(source='section.id', read_only=True)
+    section_name = serializers.CharField(source='section.name', read_only=True)
+    session_id = serializers.UUIDField(source='session.id', read_only=True)
+    session_name = serializers.CharField(source='session.name', read_only=True)
+    
+    class Meta:
+        model = ClassTeacher
+        fields = [
+            'id', 'teacher_id', 'teacher_name',
+            'class_id', 'class_name', 'section_id', 'section_name',
+            'session_id', 'session_name', 'is_active', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class ClassTeacherCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating class teacher assignments."""
+    teacher_id = serializers.UUIDField(write_only=True)
+    class_id = serializers.UUIDField(write_only=True)
+    section_id = serializers.UUIDField(write_only=True)
+    session_id = serializers.UUIDField(write_only=True)
+    
+    class Meta:
+        model = ClassTeacher
+        fields = ['id', 'teacher_id', 'class_id', 'section_id', 'session_id', 'is_active', 'created_at']
+        read_only_fields = ['id', 'created_at']
+    
+    def create(self, validated_data):
+        teacher_id = validated_data.pop('teacher_id')
+        class_id = validated_data.pop('class_id')
+        section_id = validated_data.pop('section_id')
+        session_id = validated_data.pop('session_id')
+        
+        validated_data['teacher'] = Teacher.objects.get(id=teacher_id)
+        validated_data['class_ref'] = Class.objects.get(id=class_id)
+        validated_data['section'] = Section.objects.get(id=section_id)
+        validated_data['session'] = Session.objects.get(id=session_id)
+        
+        # Use update_or_create to handle unique constraint
+        instance, created = ClassTeacher.objects.update_or_create(
+            class_ref=validated_data['class_ref'],
+            section=validated_data['section'],
+            session=validated_data['session'],
+            defaults={
+                'teacher': validated_data['teacher'],
+                'is_active': validated_data.get('is_active', True)
+            }
+        )
+        return instance
+
+
+# ============================================================================
+# Cocurricular & Optional Teacher Assignment Serializers
+# ============================================================================
+
+class CocurricularTeacherAssignmentSerializer(serializers.ModelSerializer):
+    """Serializer for cocurricular teacher assignments."""
+    teacher_id = serializers.UUIDField(source='teacher.id', read_only=True)
+    teacher_name = serializers.CharField(source='teacher.name', read_only=True)
+    cocurricular_subject_name = serializers.CharField(source='cocurricular_subject.name', read_only=True)
+    class_name = serializers.CharField(source='class_ref.name', read_only=True)
+    section_name = serializers.CharField(source='section.name', read_only=True)
+    session_name = serializers.CharField(source='session.name', read_only=True)
+    
+    class Meta:
+        model = CocurricularTeacherAssignment
+        fields = [
+            'id', 'teacher_id', 'teacher_name', 'cocurricular_subject_name',
+            'class_name', 'section_name', 'session_name', 'is_active', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class CocurricularTeacherAssignmentCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating cocurricular teacher assignments."""
+    teacher_id = serializers.UUIDField(write_only=True)
+    class_id = serializers.UUIDField(write_only=True)
+    section_id = serializers.UUIDField(write_only=True)
+    cocurricular_subject_id = serializers.UUIDField(write_only=True)
+    session_id = serializers.UUIDField(write_only=True)
+    
+    class Meta:
+        model = CocurricularTeacherAssignment
+        fields = ['id', 'teacher_id', 'class_id', 'section_id', 'cocurricular_subject_id', 'session_id', 'is_active', 'created_at']
+        read_only_fields = ['id', 'created_at']
+    
+    def create(self, validated_data):
+        validated_data['teacher'] = Teacher.objects.get(id=validated_data.pop('teacher_id'))
+        validated_data['class_ref'] = Class.objects.get(id=validated_data.pop('class_id'))
+        validated_data['section'] = Section.objects.get(id=validated_data.pop('section_id'))
+        validated_data['cocurricular_subject'] = CocurricularSubject.objects.get(id=validated_data.pop('cocurricular_subject_id'))
+        validated_data['session'] = Session.objects.get(id=validated_data.pop('session_id'))
+        
+        instance, created = CocurricularTeacherAssignment.objects.update_or_create(
+            class_ref=validated_data['class_ref'],
+            section=validated_data['section'],
+            cocurricular_subject=validated_data['cocurricular_subject'],
+            session=validated_data['session'],
+            defaults={
+                'teacher': validated_data['teacher'],
+                'is_active': validated_data.get('is_active', True)
+            }
+        )
+        return instance
+
+
+class OptionalTeacherAssignmentSerializer(serializers.ModelSerializer):
+    """Serializer for optional subject teacher assignments."""
+    teacher_id = serializers.UUIDField(source='teacher.id', read_only=True)
+    teacher_name = serializers.CharField(source='teacher.name', read_only=True)
+    optional_subject_name = serializers.CharField(source='optional_subject.name', read_only=True)
+    class_name = serializers.CharField(source='class_ref.name', read_only=True)
+    section_name = serializers.CharField(source='section.name', read_only=True)
+    session_name = serializers.CharField(source='session.name', read_only=True)
+    
+    class Meta:
+        model = OptionalTeacherAssignment
+        fields = [
+            'id', 'teacher_id', 'teacher_name', 'optional_subject_name',
+            'class_name', 'section_name', 'session_name', 'is_active', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class OptionalTeacherAssignmentCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating optional teacher assignments."""
+    teacher_id = serializers.UUIDField(write_only=True)
+    class_id = serializers.UUIDField(write_only=True)
+    section_id = serializers.UUIDField(write_only=True)
+    optional_subject_id = serializers.UUIDField(write_only=True)
+    session_id = serializers.UUIDField(write_only=True)
+    
+    class Meta:
+        model = OptionalTeacherAssignment
+        fields = ['id', 'teacher_id', 'class_id', 'section_id', 'optional_subject_id', 'session_id', 'is_active', 'created_at']
+        read_only_fields = ['id', 'created_at']
+    
+    def create(self, validated_data):
+        validated_data['teacher'] = Teacher.objects.get(id=validated_data.pop('teacher_id'))
+        validated_data['class_ref'] = Class.objects.get(id=validated_data.pop('class_id'))
+        validated_data['section'] = Section.objects.get(id=validated_data.pop('section_id'))
+        validated_data['optional_subject'] = OptionalSubject.objects.get(id=validated_data.pop('optional_subject_id'))
+        validated_data['session'] = Session.objects.get(id=validated_data.pop('session_id'))
+        
+        instance, created = OptionalTeacherAssignment.objects.update_or_create(
+            class_ref=validated_data['class_ref'],
+            section=validated_data['section'],
+            optional_subject=validated_data['optional_subject'],
+            session=validated_data['session'],
+            defaults={
+                'teacher': validated_data['teacher'],
+                'is_active': validated_data.get('is_active', True)
+            }
+        )
+        return instance
+
+
+# ============================================================================
+# Session Lock Serializer
+# ============================================================================
+
+class SessionLockSerializer(serializers.Serializer):
+    """Serializer for locking a session."""
+    session_id = serializers.UUIDField()
+    
+    def validate_session_id(self, value):
+        try:
+            session = Session.objects.get(id=value)
+            if session.is_locked:
+                raise serializers.ValidationError("Session is already locked.")
+            return value
+        except Session.DoesNotExist:
+            raise serializers.ValidationError("Session not found.")
+    
+    def create(self, validated_data):
+        session = Session.objects.get(id=validated_data['session_id'])
+        session.lock_session()
+        return session

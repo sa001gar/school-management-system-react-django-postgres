@@ -11,7 +11,10 @@ import {
   Plus,
   Menu,
   X,
-  Cog
+  Cog,
+  Lock,
+  Clipboard,
+  ArrowUpDown
 } from 'lucide-react'
 import { useAuthContext } from '../contexts/AuthContext'
 import { StudentsManagement } from './admin/StudentsManagement'
@@ -23,8 +26,11 @@ import { TeachersManagement } from './admin/TeachersManagement'
 import { ResultsManagement } from './admin/ResultsManagement'
 import { SchoolConfigManagement } from './admin/SchoolConfigManagement'
 import { OptionalSubjectsManagement } from './admin/OptionalSubjectsManagement'
+import StudentLifecycleManagement from './admin/StudentLifecycleManagement'
+import TeacherAssignmentsManagement from './admin/TeacherAssignmentsManagement'
+import SessionManagement from './admin/SessionManagement'
 
-type ActiveTab = 'students' | 'classes' | 'sections' | 'subjects' | 'sessions' | 'teachers' | 'results' | 'config' | 'optionalSubjects'
+type ActiveTab = 'students' | 'classes' | 'sections' | 'subjects' | 'sessions' | 'teachers' | 'results' | 'config' | 'optionalSubjects' | 'enrollments' | 'teacherAssignments' | 'sessionLocking'
 
 export const AdminDashboard: React.FC = () => {
   const { admin, signOut } = useAuthContext()
@@ -37,11 +43,14 @@ export const AdminDashboard: React.FC = () => {
 
   const tabs = [
     { id: 'students', label: 'Students', icon: Users },
+    { id: 'enrollments', label: 'Enrollments', icon: ArrowUpDown },
     { id: 'classes', label: 'Classes', icon: GraduationCap },
     { id: 'sections', label: 'Sections', icon: BookOpen },
     { id: 'subjects', label: 'Subjects', icon: FileText },
     { id: 'sessions', label: 'Sessions', icon: Calendar },
+    { id: 'sessionLocking', label: 'Session Lock', icon: Lock },
     { id: 'teachers', label: 'Teachers', icon: UserPlus },
+    { id: 'teacherAssignments', label: 'Assignments', icon: Clipboard },
     { id: 'results', label: 'Results', icon: Settings },
     { id: 'config', label: 'School Config', icon: Cog },
     { id: 'optionalSubjects', label: 'Optional Subjects', icon: Plus }
@@ -137,11 +146,14 @@ export const AdminDashboard: React.FC = () => {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-8 thin-scrollbar">
         {activeTab === 'students' && <StudentsManagement />}
+        {activeTab === 'enrollments' && <StudentLifecycleManagement />}
         {activeTab === 'classes' && <ClassesManagement />}
         {activeTab === 'sections' && <SectionsManagement />}
         {activeTab === 'subjects' && <SubjectsManagement />}
         {activeTab === 'sessions' && <SessionsManagement />}
+        {activeTab === 'sessionLocking' && <SessionManagement />}
         {activeTab === 'teachers' && <TeachersManagement />}
+        {activeTab === 'teacherAssignments' && <TeacherAssignmentsManagement />}
         {activeTab === 'results' && <ResultsManagement />}
         {activeTab === 'config' && <SchoolConfigManagement />}
         {activeTab === 'optionalSubjects' && <OptionalSubjectsManagement />}

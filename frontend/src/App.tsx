@@ -1,11 +1,24 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { AuthProvider, useAuthContext } from './contexts/AuthContext'
 import { Login } from './components/Login'
 import { Dashboard } from './components/Dashboard'
 import { AdminDashboard } from './components/AdminDashboard'
+import StudentPaymentPortal from './components/StudentPaymentPortal'
 
 const AppContent: React.FC = () => {
   const { user, teacher, admin, loading } = useAuthContext()
+  const [currentPath, setCurrentPath] = useState(window.location.pathname)
+
+  useEffect(() => {
+    const handlePopState = () => setCurrentPath(window.location.pathname)
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // Student Payment Portal route - accessible without admin/teacher auth
+  if (currentPath === '/payments' || currentPath === '/student-portal') {
+    return <StudentPaymentPortal />
+  }
 
   const roleKnown = admin !== null || teacher !== null
 
