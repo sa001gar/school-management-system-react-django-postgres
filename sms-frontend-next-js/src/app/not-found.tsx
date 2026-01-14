@@ -11,7 +11,7 @@ export default function NotFound() {
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-linear-to-br from-amber-50 via-orange-50 to-red-50 flex flex-col items-center justify-center p-4">
       <div className="text-center max-w-md">
         {/* 404 Icon */}
         <div className="mb-8">

@@ -84,8 +84,14 @@ class CacheMixin:
     def get_cache_key(self, request, pk=None):
         """Generate cache key for current request."""
         prefix = self.cache_key_prefix or self.__class__.__name__
+        
+        # Get current cache version for this prefix
+        version_key = f"{prefix}:version"
+        current_version = cache.get(version_key, 0)
+        
         return make_cache_key(
             prefix,
+            version=current_version,
             path=request.path,
             query=dict(request.query_params),
             pk=pk

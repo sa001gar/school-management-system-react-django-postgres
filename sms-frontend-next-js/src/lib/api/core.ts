@@ -204,6 +204,10 @@ export const classSubjectAssignmentsApi = {
     return api.post<ClassSubjectAssignment>('/class-subject-assignments/', data);
   },
 
+  bulkUpdate: async (data: { class_id: string; subject_ids: string[] }): Promise<void> => {
+    return api.post<void>('/class-subject-assignments/bulk-update/', data);
+  },
+
   update: async (id: string, data: Partial<ClassSubjectAssignment>): Promise<ClassSubjectAssignment> => {
     return api.patch<ClassSubjectAssignment>(`/class-subject-assignments/${id}/`, data);
   },

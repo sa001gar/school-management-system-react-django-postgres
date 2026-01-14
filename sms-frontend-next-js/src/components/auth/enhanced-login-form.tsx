@@ -12,7 +12,7 @@ import {
   useTransition,
   useCallback,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   LogIn,
   User,
@@ -58,6 +58,8 @@ export function EnhancedLoginForm({
   description,
 }: LoginFormProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl");
   const { setAuth } = useAuthStore();
   const isOnline = useConnectionStatus();
 
@@ -117,7 +119,8 @@ export function EnhancedLoginForm({
       // Navigate with transition
       startNavigation(() => {
         setOptimisticState("success");
-        router.push(state.redirectTo || `/${role}`);
+        // Use replace to prevent back button from returning to login page
+        router.replace(state.redirectTo || `/${role}`);
         router.refresh();
       });
     }
@@ -195,6 +198,10 @@ export function EnhancedLoginForm({
             <form action={formAction} className="space-y-4">
               {/* Hidden role field */}
               <input type="hidden" name="role" value={role} />
+              {/* Hidden callbackUrl field */}
+              {callbackUrl && (
+                <input type="hidden" name="callbackUrl" value={callbackUrl} />
+              )}
 
               {/* Error Message */}
               {state.error && !isSubmitting && (

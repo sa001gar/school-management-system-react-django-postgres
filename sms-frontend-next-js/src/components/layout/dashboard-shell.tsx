@@ -41,7 +41,7 @@ export function DashboardShell({
     <div className="flex items-center gap-3">
       <div
         className={cn(
-          "h-8 w-8 rounded-lg bg-gradient-to-br flex items-center justify-center",
+          "h-8 w-8 rounded-lg bg-linear-to-br flex items-center justify-center",
           config.color
         )}
       >
@@ -54,7 +54,7 @@ export function DashboardShell({
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50">
+    <div className="min-h-screen bg-linear-to-br from-amber-50 via-orange-50 to-red-50">
       {/* Sidebar */}
       <Sidebar
         items={navItems}
@@ -76,7 +76,7 @@ export function DashboardShell({
           icon={
             <div
               className={cn(
-                "h-8 w-8 rounded-lg bg-gradient-to-br flex items-center justify-center",
+                "h-8 w-8 rounded-lg bg-linear-to-br flex items-center justify-center",
                 config.color
               )}
             >

@@ -594,7 +594,7 @@ export function BulkStudentEntry({ isOpen, onClose, onSuccess }: Props) {
         )}
 
         {/* Controls Section */}
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200 p-4">
+        <div className="bg-linear-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200 p-4">
           {activeTab === "manual" ? (
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-amber-800 mb-2">

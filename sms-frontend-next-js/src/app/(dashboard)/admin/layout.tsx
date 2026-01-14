@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Wifi,
   WifiOff,
+  School,
 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { useAuthStore, useIsHydrated } from "@/stores/auth-store";
@@ -28,6 +29,7 @@ import {
   getSession,
   clearTokens,
 } from "@/lib/auth/session";
+import { clearSessionAction } from "@/lib/actions/auth";
 import { useConnectionStatus } from "@/lib/auth/hooks";
 import type { NavItem, NavGroup } from "@/components/layout/sidebar";
 
@@ -105,20 +107,48 @@ const adminNavGroups: NavGroup[] = [
   },
 ];
 
-// Simple branded loading component
+// Premium loading component
 function AdminLayoutSkeleton() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-amber-50/30">
-      <div className="flex flex-col items-center">
-        {/* Simple elegant spinner */}
-        <div className="w-10 h-10 rounded-full border-2 border-amber-100 border-t-amber-600 animate-spin" />
-        <p className="mt-4 text-gray-500 text-sm font-medium animate-pulse">
-          Verifying session...
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50/50">
+      <div className="relative flex items-center justify-center">
+        {/* Outer glowing ring */}
+        <div className="absolute -inset-4 bg-amber-500/10 rounded-full blur-xl animate-pulse" />
+
+        {/* Spinning border */}
+        <div className="w-16 h-16 rounded-full border-4 border-amber-100 border-t-amber-600 animate-spin" />
+
+        {/* Center Logo */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="bg-white p-2 rounded-full shadow-sm">
+            <School
+              className="w-6 h-6 text-amber-600 animate-bounce"
+              style={{ animationDuration: "3s" }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-8 flex flex-col items-center gap-2">
+        <h3 className="text-lg font-semibold text-gray-900">
+          School Management System
+        </h3>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-amber-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
+          <div className="w-2 h-2 bg-amber-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
+          <div className="w-2 h-2 bg-amber-600 rounded-full animate-bounce" />
+        </div>
+        <p className="text-sm text-gray-500 font-medium">
+          Verifying secure session...
         </p>
       </div>
     </div>
   );
 }
+
+// Check imports to ensure School icon is available
+// existing imports: LayoutDashboard, Users, UserCheck, GraduationCap, etc.
+// Need to ensure 'School' is imported.
 
 // Session error component
 function SessionError({
@@ -192,7 +222,7 @@ export default function AdminLayout({
     // Optimize: Check local session first (synchronous)
     const session = getSession();
     if (!session) {
-      router.push("/login/admin");
+      router.replace("/login/admin");
       return;
     }
 
@@ -209,20 +239,24 @@ export default function AdminLayout({
 
       if (!valid) {
         clearTokens();
-        router.push("/login/admin");
+        await clearSessionAction();
+        router.replace("/login/admin");
         return;
       }
 
       // Check role
       if (validatedUser?.role !== "admin") {
         setSessionError("You do not have admin access.");
+        clearTokens();
+        await clearSessionAction();
+
         // Redirect to appropriate dashboard
         if (validatedUser?.role === "teacher") {
-          router.push("/teacher");
+          router.replace("/teacher");
         } else if (validatedUser?.role === "student") {
-          router.push("/student");
+          router.replace("/student");
         } else {
-          router.push("/login/admin");
+          router.replace("/login/admin");
         }
         return;
       }

@@ -166,12 +166,18 @@ export async function loginAction(
     };
 
     // Determine redirect URL
-    const redirectTo =
+    const callbackUrl = formData.get('callbackUrl') as string;
+    let redirectTo =
       data.user.role === 'admin'
         ? '/admin'
         : data.user.role === 'teacher'
         ? '/teacher'
         : '/';
+
+    // Use callbackUrl if present and safe (relative URL)
+    if (callbackUrl && callbackUrl.startsWith('/') && !callbackUrl.startsWith('//')) {
+      redirectTo = callbackUrl;
+    }
 
     return {
       success: true,
@@ -199,6 +205,7 @@ export async function studentLoginAction(
 ): Promise<AuthActionState> {
   const studentId = formData.get('student_id') as string;
   const password = formData.get('password') as string;
+  const callbackUrl = formData.get('callbackUrl') as string;
 
   if (!studentId?.trim()) {
     return {
@@ -262,12 +269,17 @@ export async function studentLoginAction(
       name: data.student.name,
     };
 
+    let redirectTo = '/student';
+    if (callbackUrl && callbackUrl.startsWith('/') && !callbackUrl.startsWith('//')) {
+      redirectTo = callbackUrl;
+    }
+
     return {
       success: true,
       message: 'Login successful',
       user,
       tokens: { access: data.access, refresh: data.refresh },
-      redirectTo: '/student',
+      redirectTo,
     };
   } catch (error) {
     console.error('Student login error:', error);
@@ -280,8 +292,13 @@ export async function studentLoginAction(
 }
 
 // ============================================================================
-// Logout Action
+// Logout/Clear Session Action
 // ============================================================================
+
+export async function clearSessionAction(): Promise<{ success: boolean }> {
+  await clearAuthCookies();
+  return { success: true };
+}
 
 export async function logoutAction(): Promise<void> {
   const cookieStore = await cookies();

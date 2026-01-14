@@ -92,7 +92,7 @@ function NavGroupComponent({
                   "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
                   collapsed ? "justify-center" : "ml-1",
                   isActive
-                    ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md"
+                    ? "bg-linear-to-r from-amber-500 to-orange-500 text-white shadow-md"
                     : "text-gray-700 hover:bg-amber-50 hover:text-amber-800"
                 )}
                 onClick={onNavClick}
@@ -154,7 +154,7 @@ export function Sidebar({ items, groups, header, footer }: SidebarProps) {
         className={cn(
           "fixed left-0 top-0 z-50 flex h-full flex-col border-r transition-all duration-300",
           // Solid amber/orange themed background
-          "bg-gradient-to-b from-gray-50 via-white to-amber-50/30 border-amber-200/60",
+          "bg-linear-to-b from-gray-50 via-white to-amber-50/30 border-amber-200/60",
           sidebarCollapsed ? "w-20" : "w-64",
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}

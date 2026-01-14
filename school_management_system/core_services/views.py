@@ -479,6 +479,47 @@ class ClassSubjectAssignmentViewSet(viewsets.ModelViewSet):
         context['class_id'] = self.request.data.get('class_id')
         return context
 
+    @action(detail=False, methods=['post'], url_path='bulk-update')
+    def bulk_update(self, request):
+        """
+        Bulk update subject assignments for a class.
+        """
+        class_id = request.data.get('class_id')
+        subject_ids = request.data.get('subject_ids', [])
+        
+        if not class_id:
+            return Response({'error': 'class_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Get current assignments
+        current_assignments = ClassSubjectAssignment.objects.filter(class_ref_id=class_id)
+        current_subject_ids = set(str(a.subject_id) for a in current_assignments)
+        new_subject_ids = set(str(sid) for sid in subject_ids)
+        
+        # Determine diffs
+        to_create = new_subject_ids - current_subject_ids
+        to_delete = current_subject_ids - new_subject_ids
+        
+        # Delete removed assignments
+        if to_delete:
+            ClassSubjectAssignment.objects.filter(
+                class_ref_id=class_id,
+                subject_id__in=to_delete
+            ).delete()
+            
+        # Create new assignments
+        new_assignments = []
+        for subject_id in to_create:
+            new_assignments.append(ClassSubjectAssignment(
+                class_ref_id=class_id,
+                subject_id=subject_id,
+                is_required=True
+            ))
+            
+        if new_assignments:
+            ClassSubjectAssignment.objects.bulk_create(new_assignments)
+            
+        return Response({'status': 'success', 'message': 'Assignments updated successfully'})
+
 
 class ClassOptionalConfigViewSet(viewsets.ModelViewSet):
     """ViewSet for class optional configuration."""

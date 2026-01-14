@@ -25,7 +25,7 @@ import { Modal, ModalFooter } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/loading";
 import { PageHeader } from "@/components/layout/page-header";
-import { classesApi, sectionsApi } from "@/lib/api";
+import { classesApi, sectionsApi, teacherAssignmentsApi } from "@/lib/api";
 import type { Class, Section } from "@/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -77,6 +77,12 @@ export function ClassesManagement() {
       sections: (allSections || []).filter((s) => s.class_id === cls.id),
     }))
     .sort((a, b) => a.level - b.level);
+
+  // Fetch Teacher Assignments to show details
+  const { data: assignments } = useQuery({
+    queryKey: ["teacher-assignments"],
+    queryFn: () => teacherAssignmentsApi.getAll(),
+  });
 
   // Class Mutations
   const createClassMutation = useMutation({
@@ -279,7 +285,7 @@ export function ClassesManagement() {
       {/* Stats Bar */}
       {!isLoading && classesWithSections.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50">
+          <Card className="border-amber-200 bg-linear-to-br from-amber-50 to-orange-50">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="p-2 rounded-lg bg-amber-100">
                 <LayoutGrid className="h-5 w-5 text-amber-700" />
@@ -292,7 +298,7 @@ export function ClassesManagement() {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-red-50">
+          <Card className="border-orange-200 bg-linear-to-br from-orange-50 to-red-50">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="p-2 rounded-lg bg-orange-100">
                 <Layers className="h-5 w-5 text-orange-700" />
@@ -308,7 +314,7 @@ export function ClassesManagement() {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 hidden sm:block">
+          <Card className="border-green-200 bg-linear-to-br from-green-50 to-emerald-50 hidden sm:block">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="p-2 rounded-lg bg-green-100">
                 <GraduationCap className="h-5 w-5 text-green-700" />
@@ -382,7 +388,7 @@ export function ClassesManagement() {
                     className={cn(
                       "flex items-center gap-4 p-4 cursor-pointer",
                       isExpanded &&
-                        "bg-gradient-to-r from-amber-50 to-orange-50 border-b"
+                        "bg-linear-to-r from-amber-50 to-orange-50 border-b"
                     )}
                     onClick={() => toggleExpand(cls.id)}
                   >
@@ -468,39 +474,78 @@ export function ClassesManagement() {
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
-                          {cls.sections?.map((section) => (
-                            <div
-                              key={section.id}
-                              className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg border border-gray-200 group hover:border-amber-300 hover:from-amber-50/50 hover:to-orange-50/50 transition-all"
-                            >
-                              <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-medium text-sm">
-                                  {section.name.charAt(0).toUpperCase()}
+                          {cls.sections?.map((section) => {
+                            const sectionAssignments =
+                              assignments?.filter(
+                                (a: any) =>
+                                  (a.class_id === cls.id ||
+                                    a.class_name === cls.name) &&
+                                  (a.section_id === section.id ||
+                                    a.section_name === section.name)
+                              ) || [];
+
+                            return (
+                              <div
+                                key={section.id}
+                                className="flex items-start justify-between p-3 bg-linear-to-r from-gray-50 to-gray-100 rounded-lg border border-gray-200 group hover:border-amber-300 hover:from-amber-50/50 hover:to-orange-50/50 transition-all"
+                              >
+                                <div className="flex-1 min-w-0 mr-2">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-medium text-sm shrink-0">
+                                      {section.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="font-medium text-gray-800">
+                                      Section {section.name}
+                                    </span>
+                                  </div>
+
+                                  <div className="pl-10">
+                                    {sectionAssignments.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {sectionAssignments.map((a: any) => (
+                                          <Badge
+                                            key={a.id}
+                                            variant="outline"
+                                            className="text-[10px] py-0 h-5 px-1.5 bg-white border-amber-200 text-amber-800 font-normal shadow-sm"
+                                          >
+                                            <span className="font-semibold mr-1">
+                                              {a.subject_name}:
+                                            </span>{" "}
+                                            {a.teacher_name}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[11px] text-gray-400 italic">
+                                        No teachers assigned yet
+                                      </p>
+                                    )}
+                                  </div>
                                 </div>
-                                <span className="font-medium text-gray-800">
-                                  Section {section.name}
-                                </span>
+
+                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    onClick={() =>
+                                      openEditSection(section, cls)
+                                    }
+                                    className="h-7 w-7"
+                                  >
+                                    <Edit className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    onClick={() => openDeleteSection(section)}
+                                    className="h-7 w-7 text-red-500 hover:text-red-600"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </div>
-                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={() => openEditSection(section, cls)}
-                                  className="h-7 w-7"
-                                >
-                                  <Edit className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={() => openDeleteSection(section)}
-                                  className="h-7 w-7 text-red-500 hover:text-red-600"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
