@@ -118,15 +118,27 @@ load_dotenv()
 # Replace the DATABASES section of your settings.py with this
 tmpPostgres = urlparse(os.getenv("DATABASE_URL"))
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': tmpPostgres.path.replace('/', ''),
+#         'USER': tmpPostgres.username,
+#         'PASSWORD': tmpPostgres.password,
+#         'HOST': tmpPostgres.hostname,
+#         'PORT': 5432,
+#         'OPTIONS': dict(parse_qsl(tmpPostgres.query)),
+#         'CONN_MAX_AGE': 60,
+        
+#     }
+# }
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': tmpPostgres.path.replace('/', ''),
-        'USER': tmpPostgres.username,
-        'PASSWORD': tmpPostgres.password,
-        'HOST': tmpPostgres.hostname,
+        'NAME': 'devdb',
+        'USER': 'smsadmin',
+        'PASSWORD': 'strongpassword',
+        'HOST': 'localhost',
         'PORT': 5432,
-        'OPTIONS': dict(parse_qsl(tmpPostgres.query)),
         'CONN_MAX_AGE': 60,
         
     }

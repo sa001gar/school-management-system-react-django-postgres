@@ -1,66 +1,72 @@
 /**
  * Admin Dashboard Overview Component
  */
-'use client';
+"use client";
 
-import { useQuery } from '@tanstack/react-query';
-import { 
-  Users, 
-  GraduationCap, 
-  BookOpen, 
+import { useQuery } from "@tanstack/react-query";
+import {
+  Users,
+  GraduationCap,
+  BookOpen,
   DollarSign,
   TrendingUp,
   Calendar,
   UserCheck,
-  AlertCircle
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { StatsCard } from '@/components/ui/stats-card';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/loading';
-import { formatCurrency } from '@/lib/utils';
-import { sessionsApi, studentsApi, classesApi } from '@/lib/api';
-import { teacherApi } from '@/lib/api/auth';
-import { studentFeesApi } from '@/lib/api/payments';
+  AlertCircle,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatsCard } from "@/components/ui/stats-card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/loading";
+import { formatCurrency } from "@/lib/utils";
+import { sessionsApi, studentsApi, classesApi } from "@/lib/api";
+import { teacherApi } from "@/lib/api/auth";
+import { studentFeesApi } from "@/lib/api/payments";
 
 export function AdminOverview() {
   // Fetch all required data
   const { data: sessions, isLoading: loadingSessions } = useQuery({
-    queryKey: ['sessions'],
+    queryKey: ["sessions"],
     queryFn: sessionsApi.getAll,
   });
 
-  const activeSession = sessions?.find(s => s.is_active);
+  const activeSession = sessions?.find((s) => s.is_active);
 
   const { data: classes, isLoading: loadingClasses } = useQuery({
-    queryKey: ['classes'],
+    queryKey: ["classes"],
     queryFn: classesApi.getAll,
   });
 
   const { data: teachers, isLoading: loadingTeachers } = useQuery({
-    queryKey: ['teachers'],
+    queryKey: ["teachers"],
     queryFn: teacherApi.getAll,
   });
 
   const { data: studentsData, isLoading: loadingStudents } = useQuery({
-    queryKey: ['students', { session_id: activeSession?.id }],
-    queryFn: () => studentsApi.getAll({ session_id: activeSession?.id, page: 1 }),
+    queryKey: ["students", { session_id: activeSession?.id }],
+    queryFn: () =>
+      studentsApi.getAll({ session_id: activeSession?.id, page: 1 }),
     enabled: !!activeSession?.id,
   });
 
   const { data: feeSummary, isLoading: loadingFees } = useQuery({
-    queryKey: ['fee-summary', { session_id: activeSession?.id }],
+    queryKey: ["fee-summary", { session_id: activeSession?.id }],
     queryFn: () => studentFeesApi.getSummary({ session_id: activeSession?.id }),
     enabled: !!activeSession?.id,
   });
 
-  const isLoading = loadingSessions || loadingClasses || loadingTeachers || loadingStudents || loadingFees;
+  const isLoading =
+    loadingSessions ||
+    loadingClasses ||
+    loadingTeachers ||
+    loadingStudents ||
+    loadingFees;
 
   return (
     <div className="space-y-6">
       {/* Active Session Banner */}
       {activeSession && (
-        <Card className="bg-gradient-to-r from-primary-500 to-secondary-500 text-white border-0">
+        <Card className="bg-linear-to-r from-primary-500 to-secondary-500 text-white border-0">
           <CardContent className="py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -70,8 +76,11 @@ export function AdminOverview() {
                   <p className="text-lg font-semibold">{activeSession.name}</p>
                 </div>
               </div>
-              <Badge variant="secondary" className="bg-white/20 text-white border-0">
-                {activeSession.is_locked ? 'Locked' : 'Active'}
+              <Badge
+                variant="secondary"
+                className="bg-white/20 text-white border-0"
+              >
+                {activeSession.is_locked ? "Locked" : "Active"}
               </Badge>
             </div>
           </CardContent>
@@ -82,7 +91,7 @@ export function AdminOverview() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {isLoading ? (
           <>
-            {[1, 2, 3, 4].map(i => (
+            {[1, 2, 3, 4].map((i) => (
               <Card key={i} className="p-6">
                 <Skeleton className="h-4 w-24 mb-2" />
                 <Skeleton className="h-8 w-16" />
@@ -113,7 +122,9 @@ export function AdminOverview() {
               title="Fee Collection"
               value={formatCurrency(feeSummary?.total_paid_amount || 0)}
               icon={DollarSign}
-              description={`${feeSummary?.collection_percentage?.toFixed(1) || 0}% collected`}
+              description={`${
+                feeSummary?.collection_percentage?.toFixed(1) || 0
+              }% collected`}
               iconClassName="bg-green-100"
             />
           </>
@@ -133,7 +144,7 @@ export function AdminOverview() {
           <CardContent>
             {loadingFees ? (
               <div className="space-y-3">
-                {[1, 2, 3].map(i => (
+                {[1, 2, 3].map((i) => (
                   <Skeleton key={i} className="h-8 w-full" />
                 ))}
               </div>
@@ -141,15 +152,21 @@ export function AdminOverview() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Total Expected</span>
-                  <span className="font-semibold">{formatCurrency(feeSummary.total_net_amount)}</span>
+                  <span className="font-semibold">
+                    {formatCurrency(feeSummary.total_net_amount)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Collected</span>
-                  <span className="font-semibold text-green-600">{formatCurrency(feeSummary.total_paid_amount)}</span>
+                  <span className="font-semibold text-green-600">
+                    {formatCurrency(feeSummary.total_paid_amount)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Pending</span>
-                  <span className="font-semibold text-red-600">{formatCurrency(feeSummary.total_pending_amount)}</span>
+                  <span className="font-semibold text-red-600">
+                    {formatCurrency(feeSummary.total_pending_amount)}
+                  </span>
                 </div>
                 <div className="pt-3 border-t">
                   <div className="flex items-center justify-between text-sm">
@@ -169,7 +186,9 @@ export function AdminOverview() {
                 </div>
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-4">No fee data available</p>
+              <p className="text-gray-500 text-center py-4">
+                No fee data available
+              </p>
             )}
           </CardContent>
         </Card>
@@ -193,7 +212,9 @@ export function AdminOverview() {
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">Manage Students</p>
-                  <p className="text-sm text-gray-500">Add, edit, or remove students</p>
+                  <p className="text-sm text-gray-500">
+                    Add, edit, or remove students
+                  </p>
                 </div>
               </a>
               <a
@@ -205,7 +226,9 @@ export function AdminOverview() {
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">Manage Teachers</p>
-                  <p className="text-sm text-gray-500">Teacher accounts and assignments</p>
+                  <p className="text-sm text-gray-500">
+                    Teacher accounts and assignments
+                  </p>
                 </div>
               </a>
               <a
@@ -217,7 +240,9 @@ export function AdminOverview() {
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">View Results</p>
-                  <p className="text-sm text-gray-500">Check and manage student results</p>
+                  <p className="text-sm text-gray-500">
+                    Check and manage student results
+                  </p>
                 </div>
               </a>
             </div>

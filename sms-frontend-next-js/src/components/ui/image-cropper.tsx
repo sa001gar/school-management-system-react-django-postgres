@@ -302,7 +302,11 @@ export function ImageCropper({
               )}
             </div>
           ) : (
-            <label
+            <div
+              onClick={(e) => {
+                e.preventDefault();
+                if (!disabled) inputRef.current?.click();
+              }}
               className={`flex flex-col items-center justify-center w-24 h-32 border-2 border-dashed border-gray-300 rounded-lg transition-colors ${
                 disabled
                   ? "opacity-50 cursor-not-allowed"
@@ -311,7 +315,7 @@ export function ImageCropper({
             >
               <Camera className="w-6 h-6 text-gray-400" />
               <span className="text-xs text-gray-500 mt-1">Upload</span>
-            </label>
+            </div>
           )}
 
           {!disabled && (

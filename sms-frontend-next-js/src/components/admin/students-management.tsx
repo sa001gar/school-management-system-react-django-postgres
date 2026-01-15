@@ -264,10 +264,18 @@ export function StudentsManagement() {
       errors.forEach((err) => toast.error(err));
       return;
     }
+
+    // Check if image was explicitly removed
+    const isImageRemoved = !profilePicPreview && selectedStudent.profile_pic;
+    const updateData = {
+      ...formData,
+      ...(isImageRemoved ? { profile_pic: null } : {}),
+    };
+
     startTransition(() => {
       updateMutation.mutate({
         id: selectedStudent.id,
-        data: formData,
+        data: updateData,
         imageFile: profilePicFile,
       });
     });
@@ -280,6 +288,7 @@ export function StudentsManagement() {
 
   const openEditModal = (student: Student) => {
     setSelectedStudent(student);
+    setProfilePicPreview(student.profile_pic || null);
     setFormData({
       student_id: student.student_id,
       name: student.name,
@@ -352,7 +361,10 @@ export function StudentsManagement() {
               Bulk Entry
             </Button>
             <Button
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={() => {
+                resetForm();
+                setIsCreateModalOpen(true);
+              }}
               leftIcon={<Plus className="h-4 w-4" />}
             >
               Add Student
@@ -765,7 +777,7 @@ export function StudentsManagement() {
             <div className="flex gap-6">
               {/* Profile Picture Upload */}
               <ImageCropper
-                currentImage={profilePicPreview || selectedStudent?.profile_pic}
+                currentImage={profilePicPreview}
                 onImageChange={(file, preview) => {
                   setProfilePicFile(file);
                   setProfilePicPreview(preview);
